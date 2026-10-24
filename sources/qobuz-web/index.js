@@ -15,6 +15,7 @@ var CONFIG = {
   metadataCacheTtlMs: 5 * 60 * 1000,
   searchCacheTtlMs: 60 * 1000,
   negativeCacheTtlMs: 30 * 1000,
+  previewCacheTtlMs: 60 * 60 * 1000,
   metadataCacheMaxEntries: 500,
   maxDownloadAttempts: 5,
   metadataAttempts: 3,
@@ -1206,15 +1207,21 @@ function qobuzSignedURL(objectName, methodName, params) {
   return CONFIG.previewApiBaseURL + "/api.json/0.2/" + objectName + "/" + methodName + "?" + query.join("&");
 }
 
-function qobuzPreviewURL(track) {
+function previewTrackID(track) {
   if (!track) return "";
-
-  var trackID = String(track.id || "").trim();
-  if (!trackID) return "";
-
   if (track.previewable === false && track.sampleable === false && track.streamable === false) {
     return "";
   }
+  return String(track.id || "").trim();
+}
+
+function qobuzPreviewURL(track) {
+  var trackID = previewTrackID(track);
+  if (!trackID) return "";
+
+  var cacheKey = "preview:" + trackID;
+  var cached = metadataCacheGet(cacheKey);
+  if (cached !== null) return cached;
 
   try {
     var url = qobuzSignedURL("track", "getFileUrl", {
@@ -1226,13 +1233,25 @@ function qobuzPreviewURL(track) {
       "X-App-Id": CONFIG.previewAppID
     }));
     var preview = String(payload && payload.url || "").trim();
-    if (!preview) return "";
-    if (payload.sample === false && Number(payload.duration || 0) > 45) return "";
-    return preview;
+    if (preview && payload.sample === false && Number(payload.duration || 0) > 45) preview = "";
+    // Sample links stay valid for a day; cache them below that.
+    return metadataCacheSet(cacheKey, preview, preview ? CONFIG.previewCacheTtlMs : CONFIG.negativeCacheTtlMs);
   } catch (e) {
     log.warn("[QobuzWeb] Preview URL unavailable for track " + trackID + ": " + e.message);
     return "";
   }
+}
+
+// The host (deferredPreview runtime feature) plays this link through
+// resolvePreview, so a search needs no sample lookup per track.
+function deferredPreviewURL(track) {
+  var trackID = previewTrackID(track);
+  return trackID ? "mornye-preview:qobuz-web/" + encodeURIComponent(trackID) : "";
+}
+
+function resolvePreview(input) {
+  var trackID = parseTrackID(input && typeof input === "object" ? input.id : input);
+  return { preview_url: trackID ? qobuzPreviewURL({ id: trackID }) : "" };
 }
 
 function shouldRetryMetadataError(error) {
@@ -1597,7 +1616,7 @@ function formatTrack(track, totalDiscsOverride, options) {
   };
 
   if (options.includePreview) {
-    var previewURL = qobuzPreviewURL(track);
+    var previewURL = deferredPreviewURL(track);
     if (previewURL) formatted.preview_url = previewURL;
   }
 
@@ -3145,7 +3164,8 @@ registerExtension({
   getArtist: getArtist,
   getPlaylist: getPlaylist,
   enrichTrack: enrichTrack,
-  searchTracks: searchTracks
+  searchTracks: searchTracks,
+  resolvePreview: resolvePreview
 });
 
 log.info("[QobuzWeb] Qobuz extension loaded");
