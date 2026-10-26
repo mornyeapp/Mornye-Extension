@@ -1,7 +1,7 @@
 {
   "name": "soundcloud",
   "displayName": "SoundCloud",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "description": "SoundCloud metadata and download provider. Search tracks, albums, playlists, artists. Downloads via direct SoundCloud streams.",
   "homepage": "https://github.com/zarzet/SpotiFLAC-Mobile",
   "type": [

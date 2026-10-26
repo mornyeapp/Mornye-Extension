@@ -1,0 +1,71 @@
+{
+  "name": "spotify-web",
+  "displayName": "Spotify Web",
+  "version": "1.10.3",
+  "description": "Spotify metadata provider for SpotiFLAC Mobile with complete native release, disc, catalog ID, credits, and artwork metadata plus guarded genre enrichment.",
+  "homepage": "https://github.com/zarzet/spotify-web",
+  "type": [
+    "metadata_provider"
+  ],
+  "minAppVersion": "4.2.3",
+  "skipMetadataEnrichment": true,
+  "capabilities": {
+    "homeFeed": true,
+    "networkTimeoutSeconds": 15,
+    "browseCategories": true,
+    "shareUrlTemplates": {
+      "album": "https://open.spotify.com/album/{id}",
+      "artist": "https://open.spotify.com/artist/{id}"
+    }
+  },
+  "permissions": {
+    "network": [
+      "open.spotify.com",
+      "*.spotify.com",
+      "api-partner.spotify.com",
+      "clienttoken.spotify.com",
+      "i.scdn.co",
+      "*.scdn.co",
+      "api.deezer.com"
+    ],
+    "storage": true,
+    "file": false
+  },
+  "searchBehavior": {
+    "enabled": true,
+    "placeholder": "Search Spotify...",
+    "icon": "spotify",
+    "thumbnailRatio": "square",
+    "filters": [
+      {
+        "id": "tracks",
+        "label": "Songs",
+        "icon": "music"
+      },
+      {
+        "id": "albums",
+        "label": "Albums",
+        "icon": "album"
+      },
+      {
+        "id": "artists",
+        "label": "Artists",
+        "icon": "artist"
+      },
+      {
+        "id": "playlists",
+        "label": "Playlists",
+        "icon": "playlist"
+      }
+    ]
+  },
+  "urlHandler": {
+    "enabled": true,
+    "patterns": [
+      "open.spotify.com",
+      "spotify.com",
+      "spotify:"
+    ]
+  },
+  "settings": []
+}

@@ -1,15 +1,15 @@
 {
   "version": 1,
-  "updated_at": "2026-10-23T00:00:00Z",
+  "updated_at": "2026-10-26T00:00:00Z",
   "extensions": [
     {
       "id": "spotify-web",
       "name": "spotify-web",
       "display_name": "Spotify Web",
-      "version": "1.10.2",
+      "version": "1.10.3",
       "description": "Spotify metadata provider for Mornye with complete native release, disc, catalog ID, credits, and artwork metadata plus guarded genre enrichment.",
       "download_url": "https://raw.githubusercontent.com/zarzet/SpotiFLAC-Extension/main/extensions/spotify-web.sflx",
-      "sha256": "26f4f8de8efae21d4668cac07e57e82965d796c36c9534ee6828c6efba67f81e",
+      "sha256": "d406c3e627037d63a72ecdf8e2a04180b32a9b15304203db5dc164c0a066c578",
       "category": "integration",
       "tags": [
         "spotify",
@@ -18,7 +18,7 @@
         "homefeed"
       ],
       "downloads": 0,
-      "updated_at": "2026-08-26T00:00:00Z",
+      "updated_at": "2026-10-26T00:00:00Z",
       "min_app_version": "4.3.0"
     },
     {
@@ -64,10 +64,10 @@
       "id": "soundcloud",
       "name": "soundcloud",
       "display_name": "SoundCloud",
-      "version": "1.0.11",
+      "version": "1.0.12",
       "description": "SoundCloud metadata and download provider. Search tracks, albums, playlists, artists. Downloads via direct SoundCloud streams.",
       "download_url": "https://raw.githubusercontent.com/zarzet/SpotiFLAC-Extension/main/extensions/soundcloud.sflx",
-      "sha256": "19ff9fdab8141f9a5839120ac898cf01c8c6c7a31fbd1756467d0b15d73ae80b",
+      "sha256": "346781455c4c565ff7e8eaac6dcd8dbfbc9f5dd7dedc5b0113be254ed00327af",
       "category": "download",
       "tags": [
         "soundcloud",
@@ -76,7 +76,7 @@
         "search"
       ],
       "downloads": 0,
-      "updated_at": "2026-10-22T00:00:00Z",
+      "updated_at": "2026-10-26T00:00:00Z",
       "min_app_version": "4.9.1"
     },
     {

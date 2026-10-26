@@ -1,6 +1,6 @@
 // ============================================
 // SoundCloud Extension for Mornye
-// Version: 1.0.11
+// Version: 1.0.12
 //
 // Uses SoundCloud's api-v2 metadata, AAC HLS and legacy progressive streams.
 //
@@ -94,16 +94,40 @@ function userAgentForURL(url) {
 // CLIENT ID EXTRACTION
 // ============================================
 
+function soundCloudResponseError(response) {
+  if (!response) return "no response";
+  if (response.error) return String(response.error);
+  return response.statusCode ? "HTTP " + response.statusCode : "missing HTTP status";
+}
+
+function soundCloudGet(url, headers) {
+  var response;
+  for (var attempt = 0; attempt < 2; attempt++) {
+    try {
+      response = http.get(url, headers);
+    } catch (error) {
+      response = { error: (error && error.message) || String(error) };
+    }
+    var reason = soundCloudResponseError(response);
+    var retryable = !response || response.error || response.statusCode === 408 || response.statusCode >= 500;
+    if (attempt === 1 || !retryable || /cancel|denied|not permitted|certificate/i.test(reason)) break;
+    log.warn("[SC] Request retry after:", reason);
+    if (typeof utils.sleep === "function" && utils.sleep(250) === false) {
+      throw new Error("SoundCloud request cancelled");
+    }
+  }
+  return response;
+}
+
 function fetchClientId() {
   log.info("[SC] Fetching SoundCloud client_id...");
 
-  var response = http.get("https://soundcloud.com/", {
+  var response = soundCloudGet("https://soundcloud.com/", {
     "User-Agent": utils.randomUserAgent()
   });
 
   if (!response || response.error || response.statusCode !== 200) {
-    throw new Error("Failed to fetch soundcloud.com: HTTP " +
-      (response ? response.statusCode : "no response"));
+    throw new Error("Failed to fetch soundcloud.com: " + soundCloudResponseError(response));
   }
 
   var body = response.body || "";
@@ -138,6 +162,7 @@ function fetchClientId() {
     scriptMatches = body.match(/src="(https:\/\/[^"]*sndcdn\.com[^"]*\.js)"/g);
   }
 
+  var lastBundleError = null;
   if (scriptMatches) {
     // Process from last to first (client_id is usually in later bundles)
     for (var i = scriptMatches.length - 1; i >= 0 && i >= scriptMatches.length - 8; i--) {
@@ -148,7 +173,7 @@ function fetchClientId() {
       log.debug("[SC] Checking bundle:", bundleURL.substring(bundleURL.lastIndexOf("/") + 1));
 
       try {
-        var bundleResp = http.get(bundleURL, {
+        var bundleResp = soundCloudGet(bundleURL, {
           "User-Agent": utils.randomUserAgent()
         });
 
@@ -184,14 +209,18 @@ function fetchClientId() {
             log.info("[SC] Found client_id in JS bundle");
             return;
           }
+        } else {
+          lastBundleError = soundCloudResponseError(bundleResp);
         }
       } catch (e) {
+        lastBundleError = e.message || String(e);
         log.debug("[SC] Bundle fetch failed:", e.message);
       }
     }
   }
 
-  throw new Error("Could not find SoundCloud client_id in page or JS bundles");
+  throw new Error("Could not find SoundCloud client_id in page or JS bundles" +
+    (lastBundleError ? ": " + lastBundleError : ""));
 }
 
 function ensureClientId() {
@@ -213,18 +242,18 @@ function scGet(path, extraParams) {
     url += "&" + extraParams;
   }
 
-  var response = http.get(url, {
+  var response = soundCloudGet(url, {
     "User-Agent": utils.randomUserAgent(),
     "Accept": "application/json"
   });
 
   if (!response || response.error) {
-    throw new Error("SoundCloud API failed: " + (response ? response.error : "no response"));
+    throw new Error("SoundCloud API failed: " + soundCloudResponseError(response));
   }
 
-  if (response.statusCode === 401) {
+  if (response.statusCode === 401 || response.statusCode === 403) {
     // client_id may be invalid, try refreshing
-    log.info("[SC] Got 401, refreshing client_id...");
+    log.info("[SC] Authorization rejected, refreshing client_id...");
     state.clientId = null;
     state.clientIdExpiry = 0;
     ensureClientId();
@@ -232,13 +261,12 @@ function scGet(path, extraParams) {
     sep = path.indexOf("?") === -1 ? "?" : "&";
     url = SC_API + "/" + path + sep + "client_id=" + state.clientId;
     if (extraParams) url += "&" + extraParams;
-    response = http.get(url, {
+    response = soundCloudGet(url, {
       "User-Agent": utils.randomUserAgent(),
       "Accept": "application/json"
     });
-    if (!response || response.statusCode !== 200) {
-      throw new Error("SoundCloud API failed after retry: HTTP " +
-        (response ? response.statusCode : "no response"));
+    if (!response || response.error || response.statusCode !== 200) {
+      throw new Error("SoundCloud API failed after retry: " + soundCloudResponseError(response));
     }
   }
 
@@ -523,6 +551,11 @@ function customSearch(query, options) {
 
   var isFiltered = filter && filter !== "all";
   var results = [];
+  var successfulSearches = 0;
+  var firstError = null;
+
+  // Bootstrap once, so an unavailable session does not repeat for every type.
+  ensureClientId();
 
   // Determine which types to search
   var searchTypes = ["tracks", "albums", "users", "playlists"];
@@ -545,6 +578,7 @@ function customSearch(query, options) {
         "limit=" + searchLimit + "&offset=" + offset + "&access=playable");
 
       var items = data.collection || [];
+      successfulSearches++;
 
       for (var i = 0; i < items.length; i++) {
         var item = items[i];
@@ -574,10 +608,12 @@ function customSearch(query, options) {
         }
       }
     } catch (e) {
+      if (!firstError) firstError = e;
       log.debug("[SC] Search for " + searchType + " failed:", e.message);
     }
   }
 
+  if (!successfulSearches && firstError) throw firstError;
   log.info("[SC] Found", results.length, "results (filter:", filter || "all", ")");
   return results;
 }
@@ -1036,7 +1072,7 @@ function resolveStreamURL(transcoding, track) {
       }
       continue;
     }
-    throw new Error("SoundCloud stream request failed: HTTP " + (response ? response.statusCode : "no response"));
+    throw new Error("SoundCloud stream request failed: " + soundCloudResponseError(response));
   }
 }
 
@@ -1074,7 +1110,7 @@ function readHlsPlaylist(url, depth) {
   if (downloadCancelled()) throw new Error("Download cancelled");
   var response = http.get(url, { "User-Agent": userAgentForURL(url) });
   if (!response || response.error || response.statusCode !== 200) {
-    throw new Error("SoundCloud HLS request failed: HTTP " + (response ? response.statusCode : "no response"));
+    throw new Error("SoundCloud HLS request failed: " + soundCloudResponseError(response));
   }
   var body = String(response.body || "").trim();
   if (body.indexOf("#EXTM3U") !== 0) throw new Error("Invalid SoundCloud HLS playlist");

@@ -70,7 +70,7 @@ const download = (c, data = track(), quality = 'aac_160', progress = () => {}) =
   c.download(String(data.id), quality, '/music/folder.name/track.flac', progress, { preparedContext: { track: data } });
 
 test('manifest enables segmented downloads and the modern CDN', () => {
-  assert.equal(manifest.version, '1.0.11');
+  assert.equal(manifest.version, '1.0.12');
   assert.ok(manifest.requiredRuntimeFeatures.includes('downloadSegments@1'));
   assert.ok(manifest.permissions.network.includes('*.media-streaming.soundcloud.cloud'));
   assert.equal(manifest.qualityOptions[0].id, 'aac_160');
