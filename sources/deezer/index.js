@@ -1450,6 +1450,175 @@ function searchTracks(query, limit) {
   });
 }
 
+function seedArtistText(value) {
+  if (Array.isArray(value)) {
+    return uniqueValues(value.map(function(artist) {
+      return artist && typeof artist === "object" ? artist.name : artist;
+    })).join(", ");
+  }
+  return String(value || "").trim();
+}
+
+function normalizedISRC(value) {
+  return String(value || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+}
+
+function isOwnSeed(seed) {
+  return String(seed.provider_id || "").trim().toLowerCase() === "deezer";
+}
+
+// Returns the Deezer track for a seed, or null when it has no confident match.
+// Network and HTTP failures propagate so the caller can tell them apart.
+function resolveRelatedSeed(seed) {
+  if (isOwnSeed(seed)) {
+    var ownID = parseTrackID(seed.id);
+    return ownID ? { id: ownID, isrc: normalizedISRC(seed.isrc) } : null;
+  }
+
+  var isrc = normalizedISRC(seed.isrc);
+  if (isrc) {
+    var track = deezerGet("/track/isrc:" + encodeURIComponent(isrc));
+    if (!track || track.error || !track.id) return null;
+    return { id: String(track.id), isrc: normalizedISRC(track.isrc) || isrc };
+  }
+
+  var trackName = String(seed.name || "").trim();
+  var artistName = seedArtistText(seed.artists);
+  var query = (trackName + " " + artistName).trim();
+  if (!query) return null;
+  var data = deezerGet("/search?q=" + encodeURIComponent(query) + "&limit=10");
+  var best = findBestSearchMatch(data && data.data ? data.data : [], trackName, artistName);
+  return best && best.id ? { id: String(best.id), isrc: normalizedISRC(best.isrc) } : null;
+}
+
+function gatewaySongPreviewURL(song) {
+  var media = song && Array.isArray(song.MEDIA) ? song.MEDIA : [];
+  for (var i = 0; i < media.length; i++) {
+    if (media[i] && media[i].TYPE === "preview" && media[i].HREF) {
+      return String(media[i].HREF);
+    }
+  }
+  return "";
+}
+
+// Maps a gateway song onto the public API track shape so formatTrack can reuse
+// the search mapping, with the gateway record supplying artists and credits.
+function formatGatewaySong(song) {
+  if (!song || !song.SNG_ID) return null;
+  var title = String(song.SNG_TITLE || "").trim();
+  var version = String(song.VERSION || "").trim();
+  if (version && title.toLowerCase().indexOf(version.toLowerCase()) < 0) {
+    title += " " + version;
+  }
+  var picture = String(song.ALB_PICTURE || "").trim();
+  var album = song.ALB_ID ? {
+    id: String(song.ALB_ID),
+    title: String(song.ALB_TITLE || ""),
+    cover_xl: picture ? "https://cdn-images.dzcdn.net/images/cover/" + encodeURIComponent(picture) +
+      "/1000x1000-000000-80-0-0.jpg" : ""
+  } : null;
+  var artist = song.ART_ID ? { id: String(song.ART_ID), name: String(song.ART_NAME || "") } : null;
+  var trackData = {
+    id: String(song.SNG_ID),
+    title: title,
+    duration: numberValue(song.DURATION),
+    isrc: String(song.ISRC || ""),
+    preview: gatewaySongPreviewURL(song),
+    disk_number: song.DISK_NUMBER,
+    track_position: song.TRACK_NUMBER,
+    album: album,
+    artist: artist
+  };
+  return formatTrack(trackData, {
+    album: album,
+    artist: artist,
+    gatewayTrack: song,
+    albumID: album ? withPrefix(album.id) : "",
+    artistID: artist ? withPrefix(artist.id) : ""
+  });
+}
+
+function fetchTrackMix(trackID) {
+  var payload = gatewayCall("song.getSearchTrackMix", {
+    sng_id: String(trackID),
+    start_with_input_track: false
+  });
+  var songs = payload && Array.isArray(payload.data) ? payload.data : [];
+  var tracks = [];
+  for (var i = 0; i < songs.length; i++) {
+    var formatted = formatGatewaySong(songs[i]);
+    if (formatted) tracks.push(formatted);
+  }
+  return tracks;
+}
+
+function getRelatedTracks(seeds, options) {
+  var limit = Number(options && options.limit) || 25;
+  limit = Math.max(1, Math.min(50, Math.floor(limit)));
+  var list = Array.isArray(seeds) ? seeds.slice(0, 10) : [];
+  var excludedIDs = {};
+  var excludedISRCs = {};
+  var i;
+
+  for (i = 0; i < list.length; i++) {
+    var seed = list[i] || {};
+    var seedISRC = normalizedISRC(seed.isrc);
+    if (seedISRC) excludedISRCs[seedISRC] = true;
+    if (isOwnSeed(seed)) {
+      var seedID = parseTrackID(seed.id);
+      if (seedID) excludedIDs[seedID] = true;
+    }
+  }
+
+  var succeeded = false;
+  var lastError = null;
+  var groups = [];
+  var seen = {};
+  for (i = 0; i < list.length && i < 5; i++) {
+    var resolved = null;
+    try {
+      resolved = resolveRelatedSeed(list[i] || {});
+      if (!isOwnSeed(list[i] || {})) succeeded = true;
+    } catch (resolveError) {
+      lastError = resolveError;
+      log.debug("[DeezerExt] Related seed resolve failed:", resolveError.message);
+      continue;
+    }
+    if (!resolved || seen[resolved.id]) continue;
+    seen[resolved.id] = true;
+    excludedIDs[resolved.id] = true;
+    if (resolved.isrc) excludedISRCs[resolved.isrc] = true;
+    try {
+      groups.push(fetchTrackMix(resolved.id));
+      succeeded = true;
+    } catch (mixError) {
+      lastError = mixError;
+      log.debug("[DeezerExt] Track mix failed:", mixError.message);
+    }
+  }
+
+  if (!succeeded && lastError) throw lastError;
+
+  var results = [];
+  var added = {};
+  var maxLength = 0;
+  for (i = 0; i < groups.length; i++) {
+    maxLength = Math.max(maxLength, groups[i].length);
+  }
+  for (var position = 0; position < maxLength && results.length < limit; position++) {
+    for (i = 0; i < groups.length && results.length < limit; i++) {
+      var track = groups[i][position];
+      if (!track) continue;
+      var rawID = String(track.deezer_id || stripPrefix(track.id));
+      var trackISRC = normalizedISRC(track.isrc);
+      if (excludedIDs[rawID] || added[track.id] || (trackISRC && excludedISRCs[trackISRC])) continue;
+      added[track.id] = true;
+      results.push(track);
+    }
+  }
+  return results;
+}
+
 function completeGrant() {
   if (typeof session === "undefined" || !session || typeof session.completeGrant !== "function") {
     return { success: false, error: "signed session runtime is not available" };
@@ -1469,6 +1638,7 @@ registerExtension({
   getPlaylist: getPlaylist,
   enrichTrack: enrichTrack,
   searchTracks: searchTracks,
+  getRelatedTracks: getRelatedTracks,
   checkAvailability: checkAvailability,
   download: download,
   getDownloadUrl: function () { return null; }

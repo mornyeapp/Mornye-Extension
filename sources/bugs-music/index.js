@@ -518,6 +518,108 @@ function enrichTrack(track) {
   return result;
 }
 
+var RELATED_SEED_LIMIT = 5;
+var RELATED_TITLE_MIN = 0.8;
+var RELATED_ARTIST_MIN = 0.6;
+
+function matchKey(value) {
+  return String(value || "").toLowerCase().replace(/[^0-9a-zÀ-ɏ぀-ヿ㄰-㆏一-鿿가-힯]+/g, "");
+}
+
+function baseTitle(value) {
+  return String(value || "").replace(/\s*[\(\[][^\)\]]*[\)\]]/g, "").trim() || String(value || "");
+}
+
+function similarity(a, b) {
+  var left = matchKey(a), right = matchKey(b);
+  if (!left || !right) return 0;
+  if (left === right) return 1;
+  if (typeof matching !== "undefined" && matching && typeof matching.compareStrings === "function") {
+    return Number(matching.compareStrings(String(a), String(b))) || 0;
+  }
+  return 0;
+}
+
+// Bugs often shows a Korean name with the romanized one in parentheses, such
+// as "Hangul(Latin)", so containment of either form also counts as a match.
+function artistMatches(seedArtists, artists) {
+  var seed = String(seedArtists || "").split(/\s*(?:,|&|\/|\bfeat\.?|\bft\.?)\s*/i)[0];
+  var key = matchKey(seed), other = matchKey(artists);
+  if (!key || !other) return false;
+  if (other.indexOf(key) >= 0 || key.indexOf(other) >= 0) return true;
+  return similarity(seed, artists) >= RELATED_ARTIST_MIN;
+}
+
+function resolveRelatedSeed(seed) {
+  var name = cleanText(seed.name), artists = cleanText(seed.artists);
+  if (!name || !artists) return "";
+  var best = null, bestScore = 0;
+  searchTracks(name + " " + artists).forEach(function(track) {
+    if (!artistMatches(artists, track.artists)) return;
+    var score = Math.max(similarity(name, track.name), similarity(baseTitle(name), baseTitle(track.name)));
+    if (score > bestScore) {
+      best = track;
+      bestScore = score;
+    }
+  });
+  return best && bestScore >= RELATED_TITLE_MIN ? best.id : "";
+}
+
+// The track page fills its "함께 들으면 좋은 곡" section from this fragment.
+function similarTracks(id) {
+  var html = fetchHtml(BASE_URL + "/track/ajax/similarTrack?trackId=" + id + "&page=1&decorator=blank");
+  return parseTracks(html).map(makeTrackResult);
+}
+
+function getRelatedTracks(seeds, options) {
+  var limit = Math.floor(Number(options && options.limit) || 25);
+  limit = Math.max(1, Math.min(50, limit));
+  var list = Array.isArray(seeds) ? seeds.slice(0, 10) : [];
+  var excluded = {}, seedIsrcs = {};
+  list.forEach(function(seed) {
+    if (!seed) return;
+    var isrc = String(seed.isrc || "").trim().toUpperCase();
+    if (isrc) seedIsrcs[isrc] = true;
+    if (seed.provider_id === PROVIDER_ID && seed.id) excluded[String(seed.id).replace(/^bugs:track:/, "")] = true;
+  });
+
+  var groups = [], failures = 0, successes = 0, lastError = null;
+  list.slice(0, RELATED_SEED_LIMIT).forEach(function(seed) {
+    if (!seed) return;
+    try {
+      var id = seed.provider_id === PROVIDER_ID && seed.id ? normalizeId(seed.id, "track") : resolveRelatedSeed(seed);
+      if (!id) {
+        successes++;
+        return;
+      }
+      excluded[id] = true;
+      groups.push(similarTracks(id));
+      successes++;
+    } catch (error) {
+      failures++;
+      lastError = error;
+      if (typeof log !== "undefined") log.warn("Bugs related tracks failed for a seed: " + String(error.message || error));
+    }
+  });
+  if (!successes && failures) throw lastError || new Error("Bugs related tracks are unavailable");
+
+  var results = [], seen = {};
+  for (var index = 0; results.length < limit; index++) {
+    var remaining = false;
+    for (var g = 0; g < groups.length && results.length < limit; g++) {
+      var track = groups[g][index];
+      if (!track) continue;
+      remaining = true;
+      var isrc = String(track.isrc || "").toUpperCase();
+      if (!track.id || excluded[track.id] || seen[track.id] || (isrc && seedIsrcs[isrc])) continue;
+      seen[track.id] = true;
+      results.push(track);
+    }
+    if (!remaining) break;
+  }
+  return results;
+}
+
 function customSearch(query, options) {
   var tracks = searchTracks(query);
   var limit = Number(options && typeof options === "object" ? options.limit : options);
@@ -739,5 +841,6 @@ registerExtension({
   getAlbum: getAlbum,
   getArtist: getArtist,
   handleUrl: handleUrl,
-  getHomeFeed: getHomeFeed
+  getHomeFeed: getHomeFeed,
+  getRelatedTracks: getRelatedTracks
 });

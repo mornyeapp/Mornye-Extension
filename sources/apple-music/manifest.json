@@ -1,7 +1,7 @@
 {
   "name": "apple-music",
   "displayName": "Apple Music",
-  "version": "1.4.14",
+  "version": "1.4.15",
   "description": "Apple Music metadata and lyrics provider for Mornye with guarded track matching, bounded caching, resilient requests, and complete release metadata.",
   "homepage": "https://github.com/zarzet/SpotiFLAC-Mobile",
   "type": [
@@ -13,6 +13,7 @@
   "capabilities": {
     "homeFeed": true,
     "homeFeedRegionSetting": "storefront",
+    "relatedTracks": true,
     "browseCategories": false,
     "shareUrlTemplates": {
       "track": "https://music.apple.com/us/song/{id}",

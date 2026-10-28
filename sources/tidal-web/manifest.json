@@ -1,7 +1,7 @@
 {
   "name": "tidal-web",
   "displayName": "Tidal",
-  "version": "1.2.9",
+  "version": "1.2.10",
   "description": "TIDAL metadata and search provider for Mornye using TIDAL public web endpoints.",
   "homepage": "https://github.com/zarzet/SpotiFLAC-Mobile",
   "type": [
@@ -97,7 +97,8 @@
     "shareUrlTemplates": {
       "album": "https://tidal.com/browse/album/{id}",
       "artist": "https://tidal.com/browse/artist/{id}"
-    }
+    },
+    "relatedTracks": true
   },
   "serviceHealth": [
     {

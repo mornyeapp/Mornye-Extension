@@ -1,6 +1,6 @@
 // ============================================
 // SoundCloud Extension for Mornye
-// Version: 1.0.12
+// Version: 1.0.13
 //
 // Uses SoundCloud's api-v2 metadata, AAC HLS and legacy progressive streams.
 //
@@ -1329,6 +1329,99 @@ function searchTracks(query, limit) {
 }
 
 // ============================================
+// RELATED TRACKS
+// ============================================
+
+var RELATED_MAX_SEEDS = 5;
+
+function resolveRelatedSeed(seed) {
+  if (seed.provider_id === "soundcloud" && seed.id) return String(seed.id);
+
+  var name = String(seed.name || "").trim();
+  var artists = String(seed.artists || "").trim();
+  var query = (name + " " + artists).trim();
+  if (!query) return "";
+
+  var data = scGet("search/tracks?q=" + encodeURIComponent(query),
+    "limit=5&access=playable");
+  var best = findBestMatch(data.collection || [], name, artists,
+    Number(seed.duration_ms) || 0, 65);
+  if (!best || !best.id) return "";
+  trackCacheSet(best.id, best);
+  return String(best.id);
+}
+
+function getRelatedTracks(seeds, options) {
+  var limit = Math.floor(Number(options && options.limit) || 25);
+  if (limit < 1) limit = 1;
+  if (limit > 50) limit = 50;
+
+  var seedList = Array.isArray(seeds) ? seeds.slice(0, 10) : [];
+  var excludedIds = {};
+  var excludedIsrcs = {};
+  for (var s = 0; s < seedList.length; s++) {
+    var seed = seedList[s];
+    if (!seed) continue;
+    if (seed.provider_id === "soundcloud" && seed.id) excludedIds[String(seed.id)] = true;
+    if (seed.isrc) excludedIsrcs[String(seed.isrc).toUpperCase()] = true;
+  }
+
+  ensureClientId();
+
+  var lists = [];
+  var attempted = 0;
+  var succeeded = 0;
+  var firstError = null;
+  for (var i = 0; i < seedList.length && attempted < RELATED_MAX_SEEDS; i++) {
+    if (!seedList[i] || !seedList[i].name) continue;
+    attempted++;
+    try {
+      var seedId = resolveRelatedSeed(seedList[i]);
+      if (!seedId) {
+        succeeded++;
+        continue;
+      }
+      excludedIds[seedId] = true;
+      var data = scGet("tracks/" + seedId + "/related", "limit=" + limit);
+      succeeded++;
+      var items = data.collection || [];
+      var tracks = [];
+      for (var j = 0; j < items.length; j++) {
+        if (!items[j] || !items[j].id) continue;
+        trackCacheSet(items[j].id, items[j]);
+        var track = formatTrack(items[j]);
+        if (track) tracks.push(track);
+      }
+      lists.push(tracks);
+    } catch (e) {
+      if (!firstError) firstError = e;
+      log.debug("[SC] Related tracks for seed failed:", e.message);
+    }
+  }
+
+  if (!succeeded && firstError) throw firstError;
+
+  var results = [];
+  var seen = {};
+  for (var round = 0; results.length < limit; round++) {
+    var added = false;
+    for (var l = 0; l < lists.length && results.length < limit; l++) {
+      var candidate = lists[l][round];
+      if (!candidate) continue;
+      added = true;
+      var isrc = String(candidate.isrc || "").toUpperCase();
+      if (seen[candidate.id] || excludedIds[candidate.id] || (isrc && excludedIsrcs[isrc])) continue;
+      seen[candidate.id] = true;
+      results.push(candidate);
+    }
+    if (!added) break;
+  }
+
+  log.info("[SC] Related tracks:", results.length);
+  return results;
+}
+
+// ============================================
 // REGISTER EXTENSION
 // ============================================
 
@@ -1342,6 +1435,7 @@ registerExtension({
   getArtist: getArtist,
   getPlaylist: getPlaylist,
   searchTracks: searchTracks,
+  getRelatedTracks: getRelatedTracks,
   enrichTrack: enrichTrack,
 
   // Download provider

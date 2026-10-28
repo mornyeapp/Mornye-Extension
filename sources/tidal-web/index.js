@@ -1997,6 +1997,18 @@ function searchEndpoint(kind, query, limit) {
   })), CONFIG.searchCacheTtlMs);
 }
 
+function fetchTrackRadio(trackID, limit) {
+  var id = parseTrackID(trackID);
+  if (!id) throw new Error("Invalid TIDAL track ID: " + trackID);
+  var key = "radio:" + id + ":" + Number(limit || 0);
+  var cached = metadataCacheGet(key);
+  if (cached) return cached;
+  return metadataCacheSet(key, getJSON(buildMetadataURL("tracks/" + encodeURIComponent(id) + "/radio", {
+    limit: limit,
+    offset: 0
+  })));
+}
+
 function getTrack(trackID) {
   try {
     return hydrateRawTrack(fetchTrack(trackID));
@@ -2370,6 +2382,96 @@ function enrichTrack(track) {
   }
 }
 
+function resolveRelatedSeedID(seed) {
+  if (String(seed.provider_id || "").trim() === "tidal-web") {
+    return parseTrackID(seed.id);
+  }
+  var name = String(seed.name || "").trim();
+  var artists = String(seed.artists || "").trim();
+  if (!name) return "";
+  var candidates = searchOne((name + " " + artists).trim(), "track", 8);
+  var best = selectBestSearchTrack(
+    candidates,
+    seed.isrc,
+    name,
+    artists,
+    Number(seed.duration_ms || 0)
+  );
+  return best ? parseTrackID(best.id) : "";
+}
+
+function getRelatedTracks(seeds, options) {
+  var limit = Number(options && options.limit) || 25;
+  limit = Math.max(1, Math.min(50, Math.floor(limit)));
+  var list = Array.isArray(seeds) ? seeds.slice(0, 10) : [];
+
+  var excludedIDs = {};
+  var excludedISRCs = {};
+  for (var i = 0; i < list.length; i++) {
+    var seed = list[i] || {};
+    if (String(seed.provider_id || "").trim() === "tidal-web") {
+      var ownID = parseTrackID(seed.id);
+      if (ownID) excludedIDs[ownID] = true;
+    }
+    var seedISRC = String(seed.isrc || "").trim().toUpperCase();
+    if (seedISRC) excludedISRCs[seedISRC] = true;
+  }
+
+  var resolvedIDs = [];
+  var batches = [];
+  var succeeded = 0;
+  var lastError = null;
+  for (var j = 0; j < list.length && resolvedIDs.length < 5; j++) {
+    var seedID = "";
+    try {
+      seedID = resolveRelatedSeedID(list[j] || {});
+    } catch (e) {
+      lastError = e;
+      log.debug("[TidalWeb] related seed resolution failed: " + e.message);
+      continue;
+    }
+    if (!seedID || resolvedIDs.indexOf(seedID) >= 0) continue;
+    resolvedIDs.push(seedID);
+    excludedIDs[seedID] = true;
+
+    try {
+      var response = fetchTrackRadio(seedID, Math.min(50, limit + 1));
+      succeeded++;
+      var items = response && response.items || [];
+      var batch = [];
+      for (var k = 0; k < items.length; k++) {
+        var track = formatTrack(items[k]);
+        if (track) batch.push(track);
+      }
+      batches.push(batch);
+    } catch (radioError) {
+      lastError = radioError;
+      log.debug("[TidalWeb] track radio failed: " + radioError.message);
+    }
+  }
+
+  if (!succeeded && lastError) throw lastError;
+
+  var results = [];
+  var seen = {};
+  for (var round = 0; results.length < limit; round++) {
+    var added = false;
+    for (var b = 0; b < batches.length && results.length < limit; b++) {
+      var candidate = batches[b][round];
+      if (!candidate) continue;
+      added = true;
+      var candidateID = stripPrefix(candidate.id);
+      var candidateISRC = String(candidate.isrc || "").trim().toUpperCase();
+      if (seen[candidateID] || excludedIDs[candidateID]) continue;
+      if (candidateISRC && excludedISRCs[candidateISRC]) continue;
+      seen[candidateID] = true;
+      results.push(candidate);
+    }
+    if (!added) break;
+  }
+  return results;
+}
+
 function applyTrackMetadataToDownloadResult(result, track) {
   result = result || {};
   track = track || {};
@@ -2698,7 +2800,8 @@ registerExtension({
   getArtist: getArtist,
   getPlaylist: getPlaylist,
   enrichTrack: enrichTrack,
-  searchTracks: searchTracks
+  searchTracks: searchTracks,
+  getRelatedTracks: getRelatedTracks
 });
 
 log.info("[TidalWeb] TIDAL web metadata extension loaded");

@@ -48,11 +48,13 @@ function fetchAPI(url, options) {
     response = http.get(url, headers);
     if (!response) {
         log.debug('[fetchAPI] No response from server');
+        if (options.throwOnError) throw new Error('No response from JioSaavn');
         return null;
     }
     // log.debug('[fetchAPI] Status: ' + response.statusCode + ', OK: ' + response.ok);
     if (!response.ok) {
         log.debug('[fetchAPI] Response body: ' + (response.body || '').substring(0, 200));
+        if (options.throwOnError) throw new Error(response.error || ('HTTP ' + response.statusCode + ' from JioSaavn'));
         return null;
     }
 
@@ -68,7 +70,7 @@ function fetchAPI(url, options) {
 }
 
 // ----- API call builder -----
-function callAPI(call, extraParams) {
+function callAPI(call, extraParams, options) {
     // Start with defaults
     var params = { __call: call };
     for (var key in API_DEFAULTS) {
@@ -90,7 +92,7 @@ function callAPI(call, extraParams) {
     log.debug('[callAPI] Call: ' + call + ', URL: ' + url);
 
     // Pass DEFAULT_HEADERS (without Cookie) – fetchAPI will add it dynamically
-    var result = fetchAPI(url, { headers: DEFAULT_HEADERS });
+    var result = fetchAPI(url, { headers: DEFAULT_HEADERS, throwOnError: !!(options && options.throwOnError) });
     if (!result) {
         log.debug('[callAPI] fetchAPI returned null for ' + call);
     }
@@ -1510,6 +1512,127 @@ function matchingArtists(expected, actual) {
     return names(actual).some(function(name) { return requested.indexOf(name) !== -1; });
 }
 
+// ---- src/services/related.js ----
+function isOwnSeed(seed) {
+    return String(seed.provider_id || '').trim().toLowerCase() === EXT_ID;
+}
+
+function seedArtistText(value) {
+    if (Array.isArray(value)) {
+        return value.map(function(artist) {
+            return artist && typeof artist === 'object' ? artist.name : artist;
+        }).filter(Boolean).join(', ');
+    }
+    return String(value || '').trim();
+}
+
+// JioSaavn has no ISRC lookup, so a foreign seed is matched through one search
+// request. Request failures propagate so the caller can tell them from misses.
+function resolveRelatedSeed(seed) {
+    if (isOwnSeed(seed)) {
+        var reference = catalogReference(seed.id);
+        if (!reference) return null;
+        if (/^[A-Za-z0-9_-]{8}$/.test(reference)) return { id: reference, isrc: recordingIsrc(seed.isrc) };
+        var legacy = getSong(reference);
+        return legacy && legacy.id ? { id: String(legacy.id), isrc: recordingIsrc(seed.isrc) } : null;
+    }
+
+    var name = String(seed.name || '').trim();
+    var artists = seedArtistText(seed.artists);
+    if (!name || !artists) return null;
+    var data = callAPI('search.getResults', { q: name + ' ' + artists, p: 1, n: 10 }, { throwOnError: true });
+    var results = data && Array.isArray(data.results) ? data.results : [];
+    var isrc = recordingIsrc(seed.isrc);
+    var duration = positiveInt(seed.duration_ms);
+    for (var i = 0; i < results.length; i++) {
+        if (!results[i] || results[i].type !== 'song') continue;
+        var candidate = formatSong(results[i]);
+        if (!candidate) continue;
+        if (isrc && candidate.isrc) {
+            if (isrc === candidate.isrc) return { id: candidate.id, isrc: candidate.isrc };
+            continue;
+        }
+        if (matchingName(name) !== matchingName(candidate.name) || !matchingArtists(artists, candidate.artists)) continue;
+        if (duration && candidate.duration_ms && Math.abs(duration - candidate.duration_ms) > 5000) continue;
+        return { id: candidate.id, isrc: candidate.isrc || isrc };
+    }
+    return null;
+}
+
+// The web contexts return an empty list for reco.getreco; the android context
+// returns the song's recommendations keyed by the requested song id.
+function fetchRelatedSongs(songId) {
+    var data = callAPI('reco.getreco', { pid: songId, ctx: 'android' }, { throwOnError: true });
+    var songs = Array.isArray(data) ? data : (data && Array.isArray(data[songId]) ? data[songId] : []);
+    var out = [];
+    for (var i = 0; i < songs.length; i++) {
+        if (!songs[i] || (songs[i].type && songs[i].type !== 'song')) continue;
+        var track = formatSong(songs[i]);
+        if (track && track.id) out.push(track);
+    }
+    return out;
+}
+
+function getRelatedTracks(seeds, options) {
+    var limit = Number(options && options.limit) || 25;
+    limit = Math.max(1, Math.min(50, Math.floor(limit)));
+    var list = Array.isArray(seeds) ? seeds.slice(0, 10) : [];
+    var excludedIds = {};
+    var excludedIsrcs = {};
+    var i;
+
+    for (i = 0; i < list.length; i++) {
+        var seed = list[i] || {};
+        var seedIsrc = recordingIsrc(seed.isrc);
+        if (seedIsrc) excludedIsrcs[seedIsrc] = true;
+        if (isOwnSeed(seed) && catalogReference(seed.id)) excludedIds[catalogReference(seed.id)] = true;
+    }
+
+    var succeeded = false;
+    var lastError = null;
+    var groups = [];
+    var seen = {};
+    for (i = 0; i < list.length && i < 5; i++) {
+        var resolved = null;
+        try {
+            resolved = resolveRelatedSeed(list[i] || {});
+            if (!isOwnSeed(list[i] || {})) succeeded = true;
+        } catch (e) {
+            lastError = e;
+            log.debug('[getRelatedTracks] Seed resolve failed: ' + e.message);
+            continue;
+        }
+        if (!resolved || seen[resolved.id]) continue;
+        seen[resolved.id] = true;
+        excludedIds[resolved.id] = true;
+        if (resolved.isrc) excludedIsrcs[resolved.isrc] = true;
+        try {
+            groups.push(fetchRelatedSongs(resolved.id));
+            succeeded = true;
+        } catch (e) {
+            lastError = e;
+            log.debug('[getRelatedTracks] Recommendations failed: ' + e.message);
+        }
+    }
+
+    if (!succeeded && lastError) throw lastError;
+
+    var results = [];
+    var added = {};
+    var maxLength = 0;
+    for (i = 0; i < groups.length; i++) maxLength = Math.max(maxLength, groups[i].length);
+    for (var position = 0; position < maxLength && results.length < limit; position++) {
+        for (i = 0; i < groups.length && results.length < limit; i++) {
+            var track = groups[i][position];
+            if (!track || excludedIds[track.id] || added[track.id]) continue;
+            if (track.isrc && excludedIsrcs[track.isrc]) continue;
+            added[track.id] = true;
+            results.push(track);
+        }
+    }
+    return results;
+}
+
 // ---- src/spotiflac.js ----
 // ============================================================
 // Register extension with Mornye
@@ -1521,6 +1644,7 @@ registerExtension({
     forceCleanup: forceCleanup,
     searchTracks: searchSongsService,
     customSearch: customSearch,
+    getRelatedTracks: getRelatedTracks,
     getTrack: function(token) {
         log.debug('[getTrack] Token ' + token);
         return getSongService(token);

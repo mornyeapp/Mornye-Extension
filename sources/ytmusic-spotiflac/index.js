@@ -2280,6 +2280,9 @@ function parseItemExtended(info) {
     var durationText = "";
     if (c.lengthText && c.lengthText.simpleText)
       durationText = c.lengthText.simpleText;
+    // Watch-next queue rows (playlistPanelVideoRenderer) carry runs instead.
+    if (!durationText && c.lengthText && c.lengthText.runs)
+      durationText = runsText(c.lengthText.runs, "");
     if (
       !durationText &&
       c.thumbnailOverlays &&
@@ -3365,6 +3368,229 @@ function customSearchSync(query, options) {
     L("error", "customSearch failed", String(e));
     return [];
   }
+}
+
+// ---- Related tracks (watch-next radio queue) ----
+
+var RELATED_MAX_SEEDS = 5;
+var RELATED_DURATION_TOLERANCE_MS = 15000;
+
+function relatedTitleKey(value) {
+  return metadataMatchValue(
+    String(value || "").replace(/\s*[\(\[][^\)\]]*[\)\]]/g, " "),
+  );
+}
+
+function relatedArtistKeys(value) {
+  var parts = Array.isArray(value)
+    ? value
+    : String(value || "").split(
+        /\s*,\s*|\s*;\s*|\s+&\s+|\s+and\s+|\s+feat\.?\s+|\s+ft\.?\s+|\s+x\s+/i,
+      );
+  var keys = [];
+  for (var i = 0; i < parts.length; i++) {
+    var key = metadataMatchValue(parts[i]);
+    if (key && keys.indexOf(key) < 0) keys.push(key);
+  }
+  return keys;
+}
+
+function isConfidentSeedMatch(seed, candidate) {
+  if (!seed || !candidate || !candidate.id) return false;
+  var seedTitle = relatedTitleKey(seed.name);
+  var candidateTitle = relatedTitleKey(candidate.name);
+  if (!seedTitle || !candidateTitle) return false;
+  if (
+    seedTitle !== candidateTitle &&
+    candidateTitle.indexOf(seedTitle + " ") !== 0 &&
+    seedTitle.indexOf(candidateTitle + " ") !== 0
+  )
+    return false;
+
+  var seedArtists = relatedArtistKeys(seed.artists);
+  var candidateArtists = relatedArtistKeys(candidate.artists);
+  var candidateArtistText = " " + metadataMatchValue(candidate.artists) + " ";
+  var artistOk = false;
+  for (var i = 0; i < seedArtists.length && !artistOk; i++) {
+    if (
+      candidateArtists.indexOf(seedArtists[i]) >= 0 ||
+      candidateArtistText.indexOf(" " + seedArtists[i] + " ") >= 0
+    )
+      artistOk = true;
+  }
+  if (!artistOk) return false;
+
+  var seedDuration = Number(seed.duration_ms) || 0;
+  var candidateDuration = Number(candidate.duration_ms) || 0;
+  if (
+    seedDuration > 0 &&
+    candidateDuration > 0 &&
+    Math.abs(seedDuration - candidateDuration) > RELATED_DURATION_TOLERANCE_MS
+  )
+    return false;
+  return true;
+}
+
+function resolveRelatedSeed(seed) {
+  var artists = Array.isArray(seed.artists)
+    ? seed.artists.join(", ")
+    : String(seed.artists || "");
+  var query = (artists ? artists + " " : "") + String(seed.name || "");
+  if (!query.trim()) return null;
+  var results = customSearchSync(query.trim(), { filter: "tracks" });
+  for (var i = 0; i < results.length; i++) {
+    var candidate = results[i];
+    if (candidate && candidate.item_type === "track") {
+      if (isConfidentSeedMatch(seed, candidate)) return candidate.id;
+    }
+  }
+  return null;
+}
+
+function relatedVideoType(node) {
+  var renderer = node && node.playlistPanelVideoRenderer;
+  var endpoint = renderer && renderer.navigationEndpoint;
+  var config =
+    endpoint &&
+    endpoint.watchEndpoint &&
+    endpoint.watchEndpoint.watchEndpointMusicSupportedConfigs &&
+    endpoint.watchEndpoint.watchEndpointMusicSupportedConfigs
+      .watchEndpointMusicConfig;
+  return (config && config.musicVideoType) || "";
+}
+
+// Fetches the YouTube Music radio ("RDAMVM" + videoId) queue for one song.
+// Returns sanitized tracks in the customSearch shape. Throws on HTTP errors.
+function fetchRelatedForVideo(videoId) {
+  var key = "yt:related:" + videoId;
+  var cached = cacheGet(key);
+  if (cached) return cached;
+
+  var res = fetch("https://music.youtube.com/youtubei/v1/next?alt=json", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "User-Agent": "Mozilla/5.0 (compatible)",
+      "x-youtube-client-name": "WEB_REMIX",
+      "x-youtube-client-version": CONFIG.clientVersion,
+    },
+    body: JSON.stringify({
+      context: {
+        client: {
+          clientName: "WEB_REMIX",
+          clientVersion: CONFIG.clientVersion,
+        },
+      },
+      videoId: videoId,
+      playlistId: "RDAMVM" + videoId,
+      isAudioOnly: true,
+    }),
+  });
+  if (!res || !res.ok) {
+    throw new Error(
+      "YouTube Music related request failed: " +
+        (res ? res.status : "no response"),
+    );
+  }
+  var data = res.json();
+  var panel =
+    data && data.contents
+      ? findFirstRenderer(data.contents, "playlistPanelRenderer")
+      : null;
+  var rows = panel && Array.isArray(panel.contents) ? panel.contents : [];
+
+  // Song seeds return songs; video seeds return music videos. Prefer songs
+  // and only keep other video types when the queue has no song at all.
+  var songs = [];
+  var others = [];
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    if (!row || !row.playlistPanelVideoRenderer) continue;
+    var type = relatedVideoType(row);
+    if (!type || type === "MUSIC_VIDEO_TYPE_ATV") songs.push(row);
+    else others.push(row);
+  }
+  var picked = songs.length > 0 ? songs : others;
+  var tracks = [];
+  for (var j = 0; j < picked.length; j++) {
+    var sanitized = sanitizeTrackBeforeReturn(parseItemExtended(picked[j]));
+    if (sanitized) tracks.push(stripUrlLikeFields(sanitized));
+  }
+  cacheSet(key, tracks);
+  return tracks;
+}
+
+function getRelatedTracks(seeds, options) {
+  var limit = Number(options && options.limit) || 25;
+  limit = Math.max(1, Math.min(50, Math.floor(limit)));
+  var list = Array.isArray(seeds) ? seeds.slice(0, 10) : [];
+
+  var excludedIds = {};
+  var excludedIsrcs = {};
+  var seedIds = [];
+  var attempted = 0;
+  for (var i = 0; i < list.length; i++) {
+    var seed = list[i];
+    if (!seed) continue;
+    var isrc = String(seed.isrc || "")
+      .trim()
+      .toUpperCase();
+    if (isrc) excludedIsrcs[isrc] = true;
+    var ownId =
+      seed.provider_id === "ytmusic-spotiflac"
+        ? String(seed.id || "").trim()
+        : "";
+    if (ownId) excludedIds[ownId] = true;
+    if (attempted >= RELATED_MAX_SEEDS) continue;
+    attempted++;
+    var videoId = ownId;
+    if (!videoId) {
+      try {
+        videoId = resolveRelatedSeed(seed) || "";
+      } catch (e) {
+        L("warn", "getRelatedTracks seed resolution failed", String(e));
+        videoId = "";
+      }
+    }
+    if (!videoId || seedIds.indexOf(videoId) >= 0) continue;
+    excludedIds[videoId] = true;
+    seedIds.push(videoId);
+  }
+
+  var lists = [];
+  var failures = 0;
+  for (var s = 0; s < seedIds.length; s++) {
+    try {
+      lists.push(fetchRelatedForVideo(seedIds[s]));
+    } catch (e) {
+      failures++;
+      L("warn", "getRelatedTracks related request failed", String(e));
+    }
+  }
+  if (lists.length === 0 && failures > 0) {
+    throw new Error("YouTube Music related tracks unavailable");
+  }
+
+  var out = [];
+  var seen = {};
+  var longest = 0;
+  for (var l = 0; l < lists.length; l++) {
+    if (lists[l].length > longest) longest = lists[l].length;
+  }
+  for (var idx = 0; idx < longest && out.length < limit; idx++) {
+    for (var li = 0; li < lists.length && out.length < limit; li++) {
+      var track = lists[li][idx];
+      if (!track || !track.id || seen[track.id] || excludedIds[track.id])
+        continue;
+      var trackIsrc = String(track.isrc || "")
+        .trim()
+        .toUpperCase();
+      if (trackIsrc && excludedIsrcs[trackIsrc]) continue;
+      seen[track.id] = true;
+      out.push(track);
+    }
+  }
+  return out;
 }
 
 function validateTrackForDownload(track) {
@@ -5701,6 +5927,7 @@ registerExtension({
   getPlaylist: getPlaylist,
   getArtist: getArtist,
   getHomeFeed: getHomeFeed,
+  getRelatedTracks: getRelatedTracks,
   enrichTrack: enrichTrack,
   validateTrackForDownload: validateTrackForDownload,
   finalGuardBeforeNative: finalGuardBeforeNative,

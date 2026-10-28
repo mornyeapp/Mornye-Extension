@@ -1,7 +1,7 @@
 {
   "name": "bugs-music",
   "displayName": "Bugs Music",
-  "version": "2.0.4",
+  "version": "2.0.5",
   "description": "Bugs Music search, track and album metadata, artist catalogs, charts, genre charts, and URL imports",
   "author": "ldw0403-netizen",
   "homepage": "https://github.com/ldw0403-netizen/K-Music",
@@ -17,7 +17,8 @@
   ],
   "minAppVersion": "3.0.1",
   "capabilities": {
-    "homeFeed": true
+    "homeFeed": true,
+    "relatedTracks": true
   },
   "searchBehavior": {
     "enabled": true,

@@ -1,7 +1,7 @@
 {
   "name": "jiosaavn",
   "displayName": "JioSaavn",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Search and download JioSaavn AAC tracks, browse albums, playlists, artists, and the home feed.",
   "author": "HemanthJabalpuri; Mornye compatibility fixes",
   "homepage": "https://github.com/HemanthJabalpuri/spotiflac-jiosaavn-extension",
@@ -21,7 +21,7 @@
     {"id": "AAC_48", "kind": "lossy", "label": "AAC 48 kbps", "description": "Low quality"},
     {"id": "AAC_12", "kind": "lossy", "label": "AAC 12 kbps", "description": "Lowest bitrate"}
   ],
-  "capabilities": {"homeFeed": true, "downloadFallbackTier": "low_res"},
+  "capabilities": {"homeFeed": true, "downloadFallbackTier": "low_res", "relatedTracks": true},
   "searchBehavior": {
     "enabled": true,
     "placeholder": "Search JioSaavn...",
