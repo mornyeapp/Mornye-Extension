@@ -1237,7 +1237,8 @@ function parseDescriptiveRows(data) {
         track_number: i + 1,
         album_id: albumId,
         external_url: amazonTrackURL(trackId),
-        explicit: amazonItemIsExplicit(row)
+        explicit: amazonItemIsExplicit(row),
+        audio_modes: amazonTrackAudioModes(row)
       });
     }
   }
@@ -1299,7 +1300,8 @@ function parseVisualRows(data) {
         track_number: i + 1,
         album_id: albumId,
         external_url: amazonTrackURL(trackId),
-        explicit: amazonItemIsExplicit(row)
+        explicit: amazonItemIsExplicit(row),
+        audio_modes: amazonTrackAudioModes(row)
       });
     }
   }
@@ -1526,7 +1528,8 @@ function parseTrackFromResponse(data, responseStr, trackId) {
     duration: 0,
     duration_ms: 0,
     track_number: 0,
-    type: "track"
+    type: "track",
+    audio_modes: ""
   };
 
   if (responseStr) {
@@ -1538,6 +1541,7 @@ function parseTrackFromResponse(data, responseStr, trackId) {
     }
     if (schema) {
       result.title = schema.name || "";
+      result.audio_modes = amazonTrackAudioModes(schema);
       result.explicit = /\[explicit\]/i.test(result.title);
       if (schema.duration) {
         result.duration = parseDurationISO(schema.duration);
@@ -1621,6 +1625,7 @@ function parseTrackFromResponse(data, responseStr, trackId) {
     for (var j = 0; j < allTracks.length; j++) {
       if (allTracks[j].id === trackId) {
         if (allTracks[j].title) result.title = allTracks[j].title;
+        if (allTracks[j].audio_modes) result.audio_modes = allTracks[j].audio_modes;
         if (allTracks[j].artist) result.artist = allTracks[j].artist;
         if (allTracks[j].duration) {
           result.duration = allTracks[j].duration;
@@ -1640,6 +1645,8 @@ function parseTrackFromResponse(data, responseStr, trackId) {
       for (var k = 0; k < allTracks.length; k++) {
         if (allTracks[k].title && allTracks[k].title.toLowerCase() === titleLower) {
           if (allTracks[k].artist) result.artist = allTracks[k].artist;
+          // A title-only fallback cannot identify the exact recording's audio
+          // mode. Never inherit Atmos across album versions with same title.
           if (!result.duration && allTracks[k].duration) {
             result.duration = allTracks[k].duration;
             result.duration_ms = allTracks[k].duration_ms;
@@ -1670,6 +1677,39 @@ function parseTrackFromResponse(data, responseStr, trackId) {
   }));
 
   return result;
+}
+
+// Only an explicitly advertised *track-level* audio mode may establish
+// Amazon Dolby Atmos catalogue availability. AC-4/E-AC-3 codec choices in
+// the addon manifest are provider-wide and cannot certify individual tracks.
+// Never search the whole response: album, playlist or adjacent rows can carry
+// another recording's Atmos badge.
+function amazonTrackAudioModes(track) {
+  if (!track || typeof track !== "object") return "";
+  var scopes = [track, track.metadata, track.attributes, track.audio, track.trackMetadata];
+  for (var s = 0; s < scopes.length; s++) {
+    var value = scopes[s];
+    if (!value || typeof value !== "object") continue;
+    var fields = [
+      value.audioQualities, value.audio_qualities, value.audioModes,
+      value.audio_modes, value.audioMode, value.audio_mode,
+      value.audioTraits, value.audio_traits
+    ];
+    for (var j = 0; j < fields.length; j++) {
+      var candidates = Array.isArray(fields[j]) ? fields[j] : [fields[j]];
+      for (var k = 0; k < candidates.length; k++) {
+        if (typeof candidates[k] !== "string") continue;
+        var values = candidates[k].split(/[,;|]/);
+        for (var m = 0; m < values.length; m++) {
+          var normalized = values[m].trim().toUpperCase().replace(/[ -]/g, "_");
+          if (normalized === "ATMOS" || normalized === "DOLBY_ATMOS") {
+            return "DOLBY_ATMOS";
+          }
+        }
+      }
+    }
+  }
+  return "";
 }
 
 function formatAmazonTrackMetadata(track, album, fallbackTrackNumber) {
@@ -1716,7 +1756,7 @@ function formatAmazonTrackMetadata(track, album, fallbackTrackNumber) {
     item_type: "track",
     album_type: String(track.album_type || album.type || "album"),
     audio_quality: String(track.audio_quality || ""),
-    audio_modes: String(track.audio_modes || "")
+    audio_modes: amazonTrackAudioModes(track)
   };
 }
 
@@ -2844,7 +2884,8 @@ function parseSearchResults(data, filter) {
             comment: amazonAlbumURL(trackAlbumId),
             external_urls: amazonTrackURL(tId),
             provider_id: "amazon",
-            explicit: amazonItemIsExplicit(item)
+            explicit: amazonItemIsExplicit(item),
+            audio_modes: amazonTrackAudioModes(item)
           });
           rememberResourceContext("track", tId, _currentContext);
           if (trackAlbumId) rememberResourceContext("album", trackAlbumId, _currentContext);
@@ -2979,7 +3020,8 @@ function parseSearchResults(data, filter) {
               comment: amazonAlbumURL(tInfo ? tInfo.albumId || "" : ""),
               external_urls: amazonTrackURL(tTrackId),
               provider_id: "amazon",
-              explicit: amazonItemIsExplicit(tItem)
+              explicit: amazonItemIsExplicit(tItem),
+              audio_modes: amazonTrackAudioModes(tItem)
             });
             rememberResourceContext("track", tTrackId, _currentContext);
           }
@@ -3907,6 +3949,7 @@ registerExtension({
         apiResult = fetchWithRetry(requestMedia, true);
       } catch (codecError) {
         if (codec === "flac" || !isAmazonUnavailable(codecError)) throw codecError;
+        if (codec === "ac4") throw codecError; // Never substitute stereo for an explicit Atmos request.
         L("info", "[Amazon] Codec", codec, "unavailable for ASIN:", asin, "— falling back to FLAC");
         codec = "flac";
         operation = {};

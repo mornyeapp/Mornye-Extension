@@ -8,7 +8,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
-from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
+from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile, ZipInfo
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,7 +32,8 @@ def package(source):
             entry.external_attr = 0o100644 << 16
             archive.writestr(
                 entry, ((ROOT if filename in licenses else source) / filename).read_bytes(),
-                compress_type=ZIP_DEFLATED, compresslevel=9,
+                compress_type=ZIP_STORED if source.name in ('amazon', 'amazon-new') else ZIP_DEFLATED,
+                compresslevel=9,
             )
     return buffer.getvalue()
 

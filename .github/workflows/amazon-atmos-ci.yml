@@ -1,0 +1,39 @@
+name: Amazon Atmos metadata and package checks
+
+on:
+  push:
+    branches:
+      - fix/amazon-per-track-atmos-20261029
+      - feature/amazon-new-release-20261029
+  pull_request:
+    paths:
+      - 'sources/amazon/**'
+      - 'sources/amazon-new/**'
+      - 'extensions/amzn.sflx'
+      - 'extensions/amazon-new.sflx'
+      - 'tests/amazon*.test.cjs'
+      - 'scripts/build_packages.py'
+      - 'registry.json'
+      - 'amazon-new-registry.json'
+      - '.github/workflows/amazon-atmos-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  source-and-package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Amazon metadata and signed media regressions
+        run: node --test tests/amazon*.test.cjs
+      - name: Validate source-backed package bytes and registry hashes
+        run: |
+          python3 scripts/build_packages.py --check amazon
+          if test -d sources/amazon-new; then
+            python3 scripts/build_packages.py --check amazon-new
+          fi
