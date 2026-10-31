@@ -1364,8 +1364,25 @@ function getConcert(id) {
   return detail ? cacheSet(key, detail, METADATA_CACHE_TTL_MS) : null;
 }
 
+// Apple returns an artist's albums in no useful order. Newest first, releases without a date
+// last, ties in the order Apple sent them. Only the albums of one page can be ordered here; a
+// catalog that spans several pages is ordered page by page.
+function sortAlbumsNewestFirst(items) {
+  return items.map(function (album, index) {
+    var date = String(album && album.attributes && album.attributes.releaseDate || "");
+    return { album: album, index: index, date: date };
+  }).sort(function (a, b) {
+    if (a.date !== b.date) {
+      if (!a.date) return 1;
+      if (!b.date) return -1;
+      return a.date < b.date ? 1 : -1;
+    }
+    return a.index - b.index;
+  }).map(function (entry) { return entry.album; });
+}
+
 function formatArtistAlbums(items, artistID, artistAttributes) {
-  return items.map(function (album) {
+  return sortAlbumsNewestFirst(items).map(function (album) {
     var attr = album.attributes || {};
     return {
       id: album.id || "",
