@@ -378,13 +378,36 @@ function waitBeforeRetry(attempt, retryAfterMs) {
   return true;
 }
 
+// A long "Temporarily blocked" answer (HTTP 429 with a large Retry-After) applies to the
+// whole client, not to one track. Remember it so that the next track does not ask for
+// another ticket while the gateway is still refusing. Short limits are left to the
+// per-attempt backoff in fetchDownloadInfo.
+var TICKET_BLOCK_MIN_MS = 60 * 1000;
+var ticketBlock = { until: 0 };
+
 function signedTicket(provider, type, id) {
+  var blockedMs = ticketBlock.until - Date.now();
+  if (blockedMs > 0) {
+    var blocked = new Error(
+      "ticket service is rate limited for " + Math.ceil(blockedMs / 1000) + "s more (no request sent)"
+    );
+    blocked.code = "RESOLUTION_TIMEOUT"; // ends the attempts like a spent resolution budget
+    blocked.retryAfterMs = blockedMs;
+    throw blocked;
+  }
   var resourceHash = utils.sha256(provider + ":" + (type || "track") + ":" + String(id || "").toLowerCase());
-  var payload = signedJSON("POST", "/tickets", {
-    capability: "download_ticket",
-    provider: provider,
-    resource_hash: resourceHash
-  });
+  var payload;
+  try {
+    payload = signedJSON("POST", "/tickets", {
+      capability: "download_ticket",
+      provider: provider,
+      resource_hash: resourceHash
+    });
+  } catch (ticketError) {
+    var waitMs = Number(ticketError && ticketError.retryAfterMs || 0);
+    if (waitMs >= TICKET_BLOCK_MIN_MS) ticketBlock.until = Date.now() + waitMs;
+    throw ticketError;
+  }
   var ticketID = String(payload.ticket_id || payload.ticket || "").trim();
   if (!ticketID) {
     throw new Error("signed ticket response missing ticket_id");
