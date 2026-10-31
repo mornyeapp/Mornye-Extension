@@ -2448,6 +2448,17 @@ function ttmlToLyricsResult(parsed) {
 
   if (lines.length === 0) return null;
 
+  // Apple serves only plain text for some tracks (itunes:timing="None"), sometimes with every
+  // line stamped 0. Reporting that as LINE_SYNCED made every line "[00:00.00]". Several lines
+  // that all start at the same moment carry no timing, so they are reported as UNSYNCED.
+  var hasRealTiming = String(parsed.timingMode || "").toLowerCase() !== "none";
+  if (hasRealTiming && lines.length > 1) {
+    hasRealTiming = false;
+    for (var ti = 1; ti < lines.length; ti++) {
+      if (lines[ti].startTimeMs !== lines[0].startTimeMs) { hasRealTiming = true; break; }
+    }
+  }
+
   // Append translation lines after main lyrics (with blank separator)
   if (hasTranslation && translationLines.length > 0) {
     // Add separator
@@ -2467,7 +2478,7 @@ function ttmlToLyricsResult(parsed) {
 
   return {
     lines: lines,
-    syncType: "LINE_SYNCED",
+    syncType: hasRealTiming ? "LINE_SYNCED" : "UNSYNCED",
     instrumental: false,
     plainLyrics: plainParts.join("\n"),
     provider: "Apple Music"

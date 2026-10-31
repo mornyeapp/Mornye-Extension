@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-10-29T00:00:00Z",
+  "updated_at": "2026-10-31T00:00:00Z",
   "extensions": [
     {
       "id": "spotify-web",
@@ -45,10 +45,10 @@
       "id": "apple-music",
       "name": "apple-music",
       "display_name": "Apple Music",
-      "version": "1.4.14",
+      "version": "1.4.15",
       "description": "Apple Music metadata and lyrics provider for Mornye with guarded track matching, bounded caching, resilient requests, and complete release metadata.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/apple-music.sflx",
-      "sha256": "6a45c61e608bd59ad6a000ceedc6ee4ef533599408fd30ea8e673669af86ef17",
+      "sha256": "efff2f0476f7f97bc729b23ec510f5cc432b163ebbfd92c3a5e33d9a922ddaf5",
       "category": "integration",
       "tags": [
         "apple",
@@ -57,7 +57,7 @@
         "search"
       ],
       "downloads": 0,
-      "updated_at": "2026-10-22T00:00:00Z",
+      "updated_at": "2026-10-31T00:00:00Z",
       "min_app_version": "4.2.3"
     },
     {
