@@ -1289,6 +1289,14 @@ function descriptorRequiresClientDecryption(descriptor) {
   return parseBoolean(descriptor.deezer_encrypted, false);
 }
 
+// The CDN may serve the media of another Deezer song entry for the same recording. The file is
+// encrypted with the key of the entry named in the media path
+// (/media/<a>/<b>/<c>/<d>/<e>/<SNG_ID>/<hash>.<ext>), not of the entry that was looked up.
+function mediaSongIDFromURL(url) {
+  var match = /\/media\/(?:\d+\/){1,6}(\d{3,})\/[0-9a-f]{16,}\.[a-z0-9]+(?:[?#]|$)/i.exec(String(url || ""));
+  return match ? match[1] : "";
+}
+
 function decryptDownloadedFile(encryptedPath, outputPath, trackID, onProgress) {
   var keyHex = generateBlowfishKeyHex(trackID);
   var transformResult = file.transformPatternedBlocks(
@@ -1389,7 +1397,11 @@ function download(trackID, quality, outputPath, onProgress, options) {
   try {
     if (requiresClientDecryption) {
       var encryptedLocalPath = downloadResult.path || encryptedPath;
-      actualOutputPath = decryptDownloadedFile(encryptedLocalPath, normalizedOutputPath, resolvedTrackID, onProgress);
+      var keySongID = mediaSongIDFromURL(downloadURL) || resolvedTrackID;
+      if (keySongID !== resolvedTrackID) {
+        log.debug("[DeezerExt] Media belongs to song " + keySongID + ", not " + resolvedTrackID + "; using its key");
+      }
+      actualOutputPath = decryptDownloadedFile(encryptedLocalPath, normalizedOutputPath, keySongID, onProgress);
       file.delete(encryptedLocalPath);
     }
   } catch (e3) {
