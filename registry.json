@@ -6,10 +6,10 @@
       "id": "spotify-web",
       "name": "spotify-web",
       "display_name": "Spotify Web",
-      "version": "1.10.5",
+      "version": "1.10.6",
       "description": "Spotify metadata provider for Mornye with complete native release, disc, catalog ID, credits, and artwork metadata plus guarded genre enrichment.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/spotify-web.sflx",
-      "sha256": "01e2d8a23c8ab1aaf90378bc68bcf904b4ebac4c4d019ae4ca6a3ffc815b037f",
+      "sha256": "8ed483f6c451a3af08303b833457de3fa72d8ec8aec1d80bb5f4594c2a303640",
       "category": "integration",
       "tags": [
         "spotify",
@@ -18,7 +18,7 @@
         "homefeed"
       ],
       "downloads": 0,
-      "updated_at": "2026-10-28T00:00:00Z",
+      "updated_at": "2026-11-01T00:00:00Z",
       "min_app_version": "4.3.0"
     },
     {

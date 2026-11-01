@@ -747,39 +747,47 @@ function fetchPlaylistPage(playlistID, offset, limit) {
 function fetchPlaylist(playlistID) {
   log.info("Fetching playlist:", playlistID);
 
-  const allItems = [];
+  const tracks = [];
   let offset = 0;
   const limit = 1000;
   let totalCount = null;
-  let data = null;
+  let playlistInfo = null;
 
   while (true) {
+    if (typeof utils.isRequestCancelled === "function" && utils.isRequestCancelled()) {
+      throw new Error("Playlist request cancelled");
+    }
     const response = fetchPlaylistPage(playlistID, offset, limit);
-
-    if (!data) {
-      data = response;
+    const content = getNestedValue(response, "data.playlistV2.content");
+    if (!content || !Array.isArray(content.items)) {
+      const error = getNestedValue(response, "errors.0.message");
+      throw new Error(error || "Playlist metadata unavailable");
+    }
+    const items = content.items;
+    if (totalCount === null && typeof content.totalCount === "number") {
+      totalCount = content.totalCount;
     }
 
-    const playlistData = getNestedValue(response, "data.playlistV2") || {};
-    const content = playlistData.content || {};
-    const items = content.items || [];
+    // Keep normalized tracks only. Retaining every raw catalog page doubles
+    // the live objects before a large playlist can be returned to the host.
+    const formatted = formatPlaylistData(response, items);
+    if (playlistInfo === null) playlistInfo = formatted.playlist_info;
+    for (const track of formatted.track_list) tracks.push(track);
 
-    if (items.length === 0) break;
-
-    allItems.push(...items);
-
-    if (totalCount === null) {
-      totalCount = content.totalCount || items.length;
-    }
-
-    if (allItems.length >= totalCount || items.length < limit) {
+    if (items.length === 0) {
+      if (totalCount !== null && offset < totalCount) {
+        throw new Error("Incomplete playlist: no items returned at offset " + offset);
+      }
       break;
     }
 
-    offset += limit;
+    offset += items.length;
+    if (totalCount !== null && offset >= totalCount) break;
   }
 
-  return formatPlaylistData(data, allItems);
+  playlistInfo.totalTracks = offset;
+  log.info("Fetched", tracks.length, "tracks from playlist");
+  return { type: "playlist", playlist_info: playlistInfo, track_list: tracks };
 }
 
 function formatPlaylistData(data, allItems) {
@@ -869,8 +877,6 @@ function formatPlaylistData(data, allItems) {
       provider_id: "spotify-web",
     });
   }
-
-  log.info("Fetched", tracks.length, "tracks from playlist");
 
   return {
     type: "playlist",
