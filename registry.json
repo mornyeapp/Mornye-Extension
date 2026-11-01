@@ -8,7 +8,7 @@
       "display_name": "Spotify Web",
       "version": "1.10.6",
       "description": "Spotify metadata provider for Mornye with complete native release, disc, catalog ID, credits, and artwork metadata plus guarded genre enrichment.",
-      "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/spotify-web.sflx",
+      "download_url": "https://raw.githubusercontent.com/Gavr664/Mornye-Extension/main/extensions/spotify-web.sflx",
       "sha256": "8ed483f6c451a3af08303b833457de3fa72d8ec8aec1d80bb5f4594c2a303640",
       "category": "integration",
       "tags": [
@@ -27,7 +27,7 @@
       "display_name": "Amazon Music",
       "version": "2.3.16",
       "description": "Amazon Music metadata and downloads with per-track Dolby Atmos tags when provided by Amazon, complete release metadata, original artwork, lossless audio, and AC-4.",
-      "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/amzn.sflx",
+      "download_url": "https://raw.githubusercontent.com/Gavr664/Mornye-Extension/main/extensions/amzn.sflx",
       "sha256": "6a8c3a141a0ddf8e872fdacca09b08c880f82357034aa3d9aeba1feb37da5b75",
       "category": "download",
       "tags": [
@@ -47,7 +47,7 @@
       "display_name": "Apple Music",
       "version": "1.4.15",
       "description": "Apple Music metadata and lyrics provider for Mornye with guarded track matching, bounded caching, resilient requests, and complete release metadata.",
-      "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/apple-music.sflx",
+      "download_url": "https://raw.githubusercontent.com/Gavr664/Mornye-Extension/main/extensions/apple-music.sflx",
       "sha256": "5b1de1be2094364853102cf51cc5691e429d2e6063eec0ddc250d474d42fb7cd",
       "category": "integration",
       "tags": [
@@ -66,7 +66,7 @@
       "display_name": "SoundCloud",
       "version": "1.0.14",
       "description": "SoundCloud metadata and download provider. Search tracks, albums, playlists, artists. Downloads via direct SoundCloud streams.",
-      "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/soundcloud.sflx",
+      "download_url": "https://raw.githubusercontent.com/Gavr664/Mornye-Extension/main/extensions/soundcloud.sflx",
       "sha256": "1f0d062fcd604c226655104d494a5efeded60545e4db6c8c0ae10ed66656b72d",
       "category": "download",
       "tags": [
@@ -85,9 +85,9 @@
       "display_name": "YouTube Music",
       "version": "2.4.6",
       "description": "YouTube Music metadata and download provider with native album, artist, explicit, release, and song-credit metadata plus validated catalog enrichment.",
-      "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/ytmusic-spotiflac.sflx",
+      "download_url": "https://raw.githubusercontent.com/Gavr664/Mornye-Extension/main/extensions/ytmusic-spotiflac.sflx",
       "sha256": "f9e61bf9129ecf4ffa994ef7410deb3753530eea90a3edab7b65d99c9e5965aa",
-      "icon_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/icons/ytmusic-spotiflac.jpg",
+      "icon_url": "https://raw.githubusercontent.com/Gavr664/Mornye-Extension/main/icons/ytmusic-spotiflac.jpg",
       "category": "download",
       "tags": [
         "youtube",
@@ -107,7 +107,7 @@
       "display_name": "Deezer",
       "version": "1.3.9",
       "description": "Deezer metadata and lossless download provider with complete release, disc, barcode, credits, explicit, genre, rights, link, and high-resolution artwork metadata.",
-      "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/deezer.sflx",
+      "download_url": "https://raw.githubusercontent.com/Gavr664/Mornye-Extension/main/extensions/deezer.sflx",
       "sha256": "ac681cef3f91cc4d24ad62f45e8ea6b7e76598ddb60094bfdc05091e9a4c7954",
       "category": "download",
       "tags": [
@@ -127,7 +127,7 @@
       "display_name": "Qobuz",
       "version": "1.2.25",
       "description": "Qobuz metadata and download provider for Mornye with resilient album search and track recovery, complete release metadata, credits, multi-disc totals, and original artwork.",
-      "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/qobuz-web.sflx",
+      "download_url": "https://raw.githubusercontent.com/Gavr664/Mornye-Extension/main/extensions/qobuz-web.sflx",
       "sha256": "3307258a2ed0cd39c2c7f250bfb34ff8c8ce60182addb6e849f525d1bfc9a54b",
       "category": "download",
       "tags": [
@@ -147,7 +147,7 @@
       "display_name": "Tidal",
       "version": "1.2.11",
       "description": "TIDAL metadata, search, and download provider for Mornye with complete release, credits, explicit, and disc metadata from TIDAL Web.",
-      "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/tidal-web.sflx",
+      "download_url": "https://raw.githubusercontent.com/Gavr664/Mornye-Extension/main/extensions/tidal-web.sflx",
       "sha256": "26a1b8ec93bdd9459e230771ac5cdf865c0055dcc50747e0b5df7dac5b1d174b",
       "category": "download",
       "tags": [
@@ -167,7 +167,7 @@
       "display_name": "Bugs Music",
       "version": "2.0.5",
       "description": "Bugs Music metadata provider with accurate track and album details, artist catalogs, TOP100, genre charts, and URL imports.",
-      "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/bugs-music.sflx",
+      "download_url": "https://raw.githubusercontent.com/Gavr664/Mornye-Extension/main/extensions/bugs-music.sflx",
       "sha256": "3500241ba9aac2e88c2dc8ac8d1ac49a8f0b897eca890420dd8d2b7fa35e7b9d",
       "category": "integration",
       "tags": [
@@ -187,7 +187,7 @@
       "display_name": "Melon Music",
       "version": "2.0.4",
       "description": "Melon Music metadata provider with song search, album and artist catalogs, DJ playlists, separate TOP100 and HOT100 charts, and URL imports.",
-      "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/melon-music.sflx",
+      "download_url": "https://raw.githubusercontent.com/Gavr664/Mornye-Extension/main/extensions/melon-music.sflx",
       "sha256": "b40d17d70bd8c3395dd948e64dc815b0f29425913632b4fa54cc1d781eb3b94f",
       "category": "integration",
       "tags": [
@@ -208,7 +208,7 @@
       "display_name": "Genie Music",
       "version": "2.0.4",
       "description": "Genie Music metadata provider with track details, albums, paginated artist catalogs, TOP200, genre charts, and URL imports.",
-      "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/genie-music.sflx",
+      "download_url": "https://raw.githubusercontent.com/Gavr664/Mornye-Extension/main/extensions/genie-music.sflx",
       "sha256": "9ae3e2505bd08969575d001a7262e47323b827860682a52cf1253114becca331",
       "category": "integration",
       "tags": [
@@ -228,9 +228,9 @@
       "display_name": "JioSaavn",
       "version": "1.0.10",
       "description": "Search and download JioSaavn AAC tracks, with album, playlist, artist metadata and a home feed.",
-      "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/jiosaavn.sflx",
+      "download_url": "https://raw.githubusercontent.com/Gavr664/Mornye-Extension/main/extensions/jiosaavn.sflx",
       "sha256": "e35852c5ced6b0ea651eea0867c5dac46c79482c4ae4602185186621b4044887",
-      "icon_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/icons/jiosaavn.png",
+      "icon_url": "https://raw.githubusercontent.com/Gavr664/Mornye-Extension/main/icons/jiosaavn.png",
       "category": "download",
       "tags": [
         "jiosaavn",
