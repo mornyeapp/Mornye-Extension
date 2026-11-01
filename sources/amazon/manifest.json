@@ -1,7 +1,7 @@
 {
   "name": "amazon",
   "displayName": "Amazon Music",
-  "version": "2.3.15",
+  "version": "2.3.16",
   "description": "Amazon Music metadata & download provider for Mornye. Browse tracks, albums, artists, playlists from Amazon Music links and search. Downloads lossless and Dolby Atmos audio.",
   "type": [
     "metadata_provider",
