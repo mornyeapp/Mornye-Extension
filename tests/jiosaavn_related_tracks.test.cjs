@@ -44,7 +44,7 @@ function runtime(respond = () => ({})) {
 const recoCalls = calls => calls.filter(p => p.get('__call') === 'reco.getreco').map(p => p.get('pid'));
 
 test('manifest declares related tracks', () => {
-  assert.equal(manifest.version, '1.0.9');
+  assert.equal(manifest.version, '1.0.10');
   assert.equal(manifest.capabilities.relatedTracks, true);
 });
 

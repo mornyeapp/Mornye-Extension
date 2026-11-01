@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-10-28T00:00:00Z",
+  "updated_at": "2026-11-01T00:00:00Z",
   "extensions": [
     {
       "id": "spotify-web",
@@ -25,10 +25,10 @@
       "id": "amazon",
       "name": "amazon",
       "display_name": "Amazon Music",
-      "version": "2.3.14",
+      "version": "2.3.15",
       "description": "Amazon Music metadata & download provider for Mornye. Includes complete Amazon Web release metadata, original-resolution artwork, lossless audio, and Dolby Atmos.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/amzn.sflx",
-      "sha256": "d45e105b4286d4c7ddc062b73b8190c93099e7f6e4d4586b420e0b31dabcb967",
+      "sha256": "6c31760fa7005438ee1844ae63ea39e4dccac8811a6d492495bceee7712ce84f",
       "category": "download",
       "tags": [
         "amazon",
@@ -38,7 +38,7 @@
         "search"
       ],
       "downloads": 0,
-      "updated_at": "2026-10-22T00:00:00Z",
+      "updated_at": "2026-11-01T00:00:00Z",
       "min_app_version": "4.9.1"
     },
     {
@@ -64,10 +64,10 @@
       "id": "soundcloud",
       "name": "soundcloud",
       "display_name": "SoundCloud",
-      "version": "1.0.13",
+      "version": "1.0.14",
       "description": "SoundCloud metadata and download provider. Search tracks, albums, playlists, artists. Downloads via direct SoundCloud streams.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/soundcloud.sflx",
-      "sha256": "5ae99aef4094c2e4c95acc0bfc834c9dfe6bd404d462b2bb2900e5663be7314e",
+      "sha256": "1f0d062fcd604c226655104d494a5efeded60545e4db6c8c0ae10ed66656b72d",
       "category": "download",
       "tags": [
         "soundcloud",
@@ -76,17 +76,17 @@
         "search"
       ],
       "downloads": 0,
-      "updated_at": "2026-10-28T00:00:00Z",
+      "updated_at": "2026-11-01T00:00:00Z",
       "min_app_version": "4.9.1"
     },
     {
       "id": "ytmusic-spotiflac",
       "name": "ytmusic-spotiflac",
       "display_name": "YouTube Music",
-      "version": "2.4.5",
+      "version": "2.4.6",
       "description": "YouTube Music metadata and download provider with native album, artist, explicit, release, and song-credit metadata plus validated catalog enrichment.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/ytmusic-spotiflac.sflx",
-      "sha256": "4749891c7922d4233589c2068fbc52709af803141195d811bdc3d2f91912b3fb",
+      "sha256": "f9e61bf9129ecf4ffa994ef7410deb3753530eea90a3edab7b65d99c9e5965aa",
       "icon_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/icons/ytmusic-spotiflac.jpg",
       "category": "download",
       "tags": [
@@ -98,17 +98,17 @@
         "download"
       ],
       "downloads": 0,
-      "updated_at": "2026-10-28T00:00:00Z",
+      "updated_at": "2026-11-01T00:00:00Z",
       "min_app_version": "4.5.1"
     },
     {
       "id": "deezer",
       "name": "deezer",
       "display_name": "Deezer",
-      "version": "1.3.8",
+      "version": "1.3.9",
       "description": "Deezer metadata and lossless download provider with complete release, disc, barcode, credits, explicit, genre, rights, link, and high-resolution artwork metadata.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/deezer.sflx",
-      "sha256": "9734cb40d51d340e2221f8547c15b304a68bf30c5deec32b57279577fb00b3bb",
+      "sha256": "ac681cef3f91cc4d24ad62f45e8ea6b7e76598ddb60094bfdc05091e9a4c7954",
       "category": "download",
       "tags": [
         "deezer",
@@ -118,17 +118,17 @@
         "search"
       ],
       "downloads": 0,
-      "updated_at": "2026-10-28T00:00:00Z",
+      "updated_at": "2026-11-01T00:00:00Z",
       "min_app_version": "4.9.1"
     },
     {
       "id": "qobuz-web",
       "name": "qobuz-web",
       "display_name": "Qobuz",
-      "version": "1.2.24",
+      "version": "1.2.25",
       "description": "Qobuz metadata and download provider for Mornye with resilient album search and track recovery, complete release metadata, credits, multi-disc totals, and original artwork.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/qobuz-web.sflx",
-      "sha256": "ef64bfe08786b611748448cc24f8a509a37a5ec77f85785da0060b2fc2f726c0",
+      "sha256": "3307258a2ed0cd39c2c7f250bfb34ff8c8ce60182addb6e849f525d1bfc9a54b",
       "category": "download",
       "tags": [
         "qobuz",
@@ -138,17 +138,17 @@
         "search"
       ],
       "downloads": 0,
-      "updated_at": "2026-10-24T00:00:00Z",
+      "updated_at": "2026-11-01T00:00:00Z",
       "min_app_version": "5.3.0"
     },
     {
       "id": "tidal-web",
       "name": "tidal-web",
       "display_name": "Tidal",
-      "version": "1.2.10",
+      "version": "1.2.11",
       "description": "TIDAL metadata, search, and download provider for Mornye with complete release, credits, explicit, and disc metadata from TIDAL Web.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/tidal-web.sflx",
-      "sha256": "94256a5a4763b9c2125137a38686d4b54e007fc4ac40f5ef347c18452cff24c3",
+      "sha256": "26a1b8ec93bdd9459e230771ac5cdf865c0055dcc50747e0b5df7dac5b1d174b",
       "category": "download",
       "tags": [
         "tidal",
@@ -158,7 +158,7 @@
         "search"
       ],
       "downloads": 0,
-      "updated_at": "2026-10-28T00:00:00Z",
+      "updated_at": "2026-11-01T00:00:00Z",
       "min_app_version": "4.9.0"
     },
     {
@@ -226,10 +226,10 @@
       "id": "jiosaavn",
       "name": "jiosaavn",
       "display_name": "JioSaavn",
-      "version": "1.0.9",
+      "version": "1.0.10",
       "description": "Search and download JioSaavn AAC tracks, with album, playlist, artist metadata and a home feed.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/jiosaavn.sflx",
-      "sha256": "769dcc1effa9ae427b1bfcb889cd40541e9d01ea393096a18965d06e1b52e3a5",
+      "sha256": "e35852c5ced6b0ea651eea0867c5dac46c79482c4ae4602185186621b4044887",
       "icon_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/icons/jiosaavn.png",
       "category": "download",
       "tags": [
@@ -240,7 +240,7 @@
         "download"
       ],
       "downloads": 0,
-      "updated_at": "2026-10-28T00:00:00Z",
+      "updated_at": "2026-11-01T00:00:00Z",
       "min_app_version": "4.9.5"
     }
   ]

@@ -995,7 +995,13 @@ function artistNamesMatch(expected, found) {
 }
 
 function stripTrackTitleAnnotations(value) {
-  return String(value || "").replace(/[(\[]\s*(?:(?:feat\.?|ft\.?|featuring)\s+[^)\]]+|from\s+["“][^)\]]+["”]\s*)[)\]]/gi, " ");
+  return String(value || "").replace(/[(\[]\s*(?:(?:feat\.?|ft\.?|featuring|with)\s+[^)\]]+|from\s+["“][^)\]]+["”]\s*)[)\]]/gi, function(annotation) {
+    if (/^[(\[]\s*with\b/i.test(annotation) &&
+        /\b(?:mix|remix|live|acoustic|demo|instrumental|karaoke|edit|extended|slowed|sped)\b/i.test(annotation)) {
+      return annotation;
+    }
+    return " ";
+  });
 }
 
 function normalizeTrackIdentityTitle(value) {
@@ -2300,6 +2306,11 @@ function findVerifiedSearchTrack(isrc, trackName, artistName, expectedDurationMs
   // A title-only query helps when the provider tokenizes artist credits differently.
   // Keep the original title (including version labels) and all match safeguards.
   uniquePush(queries, String(trackName || "").trim(), seen);
+  var strippedTitle = stripTrackTitleAnnotations(trackName).replace(/\s+/g, " ").trim();
+  if (strippedTitle && strippedTitle !== String(trackName || "").trim()) {
+    uniquePush(queries, (strippedTitle + " " + String(artistName || "")).trim(), seen);
+    uniquePush(queries, strippedTitle, seen);
+  }
   var best = null;
   var provisional = null;
   var albumTitle = albumSearchTitle(albumName) || String(albumName || "").trim();

@@ -1158,10 +1158,20 @@ function resolveTrackIDFromISRC(isrc) {
   }
 }
 
-function findBestSearchMatch(tracks, trackName, artistName) {
+function stripTrackTitleAnnotations(value) {
+  return String(value || "").replace(/[(\[]\s*(?:(?:feat\.?|ft\.?|featuring|with)\s+[^)\]]+|from\s+["“][^)\]]+["”]\s*)[)\]]/gi, function(annotation) {
+    if (/^[(\[]\s*with\b/i.test(annotation) &&
+        /\b(?:mix|remix|live|acoustic|demo|instrumental|karaoke|edit|extended|slowed|sped)\b/i.test(annotation)) {
+      return annotation;
+    }
+    return " ";
+  });
+}
+
+function findBestSearchMatch(tracks, trackName, artistName, durationMs) {
   if (!tracks || !tracks.length) return null;
 
-  var normalizedTrack = matching.normalizeString(trackName || "");
+  var normalizedTrack = matching.normalizeString(stripTrackTitleAnnotations(trackName));
   var normalizedArtist = matching.normalizeString(artistName || "");
   var best = null;
   var bestScore = 0;
@@ -1173,12 +1183,20 @@ function findBestSearchMatch(tracks, trackName, artistName) {
     var score = 0;
     var title = track.title || "";
     var artist = track.artist && track.artist.name ? track.artist.name : "";
+    var normalizedTitle = matching.normalizeString(stripTrackTitleAnnotations(title));
+    var version = /\b(?:mix|remix|live|acoustic|demo|instrumental|karaoke|edit|extended|slowed|sped)\b/;
+    if (normalizedTrack !== normalizedTitle &&
+        (version.test(normalizedTrack) || version.test(normalizedTitle))) continue;
+    var artistScore = matching.compareStrings(normalizedArtist, matching.normalizeString(artist));
+    if (normalizedArtist && artistScore < 0.5) continue;
+    var candidateDuration = Number(track.duration || 0) * 1000;
+    if (durationMs > 0 && candidateDuration > 0 && Math.abs(durationMs - candidateDuration) > 15000) continue;
 
     if (normalizedTrack) {
-      score += matching.compareStrings(normalizedTrack, matching.normalizeString(title)) * 70;
+      score += matching.compareStrings(normalizedTrack, normalizedTitle) * 70;
     }
     if (normalizedArtist) {
-      score += matching.compareStrings(normalizedArtist, matching.normalizeString(artist)) * 30;
+      score += artistScore * 30;
     }
 
     if (score > bestScore) {
@@ -1191,7 +1209,7 @@ function findBestSearchMatch(tracks, trackName, artistName) {
   return best;
 }
 
-function resolveTrackIDBySearch(trackName, artistName) {
+function resolveTrackIDBySearch(trackName, artistName, durationMs) {
   var query = String(trackName || "").trim();
   if (artistName) {
     query += " " + String(artistName).trim();
@@ -1199,10 +1217,20 @@ function resolveTrackIDBySearch(trackName, artistName) {
   query = query.trim();
   if (!query) return "";
 
+  var queries = [query];
+  var strippedTitle = stripTrackTitleAnnotations(trackName).replace(/\s+/g, " ").trim();
+  if (strippedTitle && strippedTitle !== String(trackName || "").trim()) {
+    var strippedQuery = (strippedTitle + " " + (artistName || "")).trim();
+    if (queries.indexOf(strippedQuery) < 0) queries.push(strippedQuery);
+  }
   try {
-    var data = deezerGet("/search?q=" + encodeURIComponent(query) + "&limit=10");
-    var best = findBestSearchMatch(data && data.data ? data.data : [], trackName, artistName);
-    return best && best.id ? String(best.id) : "";
+    for (var i = 0; i < queries.length; i++) {
+      if (utils && typeof utils.isDownloadCancelled === "function" && utils.isDownloadCancelled()) return "";
+      var data = deezerGet("/search?q=" + encodeURIComponent(queries[i]) + "&limit=10");
+      var best = findBestSearchMatch(data && data.data ? data.data : [], trackName, artistName, durationMs);
+      if (best && best.id) return String(best.id);
+    }
+    return "";
   } catch (e) {
     log.debug("[DeezerExt] search resolve failed:", e.message);
     return "";
@@ -1220,7 +1248,7 @@ function resolveTrackID(isrc, trackName, artistName, options) {
     if (deezerID) return deezerID;
   }
 
-  return resolveTrackIDBySearch(trackName, artistName);
+  return resolveTrackIDBySearch(trackName, artistName, Number(options.duration_ms || options.track && options.track.duration_ms || 0));
 }
 
 function checkAvailability(isrc, trackName, artistName, options) {

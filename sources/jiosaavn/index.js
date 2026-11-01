@@ -1482,22 +1482,43 @@ function checkAvailability(isrc, trackName, artistName, options) {
         }
     }
     if (!trackName || !artistName) return { available: false, reason: 'No recording metadata to match' };
-    var candidates = searchSongsService(trackName + ' ' + artistName, 20);
+    var queries = [trackName + ' ' + artistName];
+    var strippedTitle = stripTrackTitleAnnotations(trackName).replace(/\s+/g, ' ').trim();
+    if (strippedTitle && strippedTitle !== String(trackName).trim()) {
+        var strippedQuery = strippedTitle + ' ' + artistName;
+        if (queries.indexOf(strippedQuery) < 0) queries.push(strippedQuery);
+    }
     var requestedIsrc = recordingIsrc(isrc);
     var requestedDuration = positiveInt(options.duration_ms || track.duration_ms);
-    for (var i = 0; i < candidates.length; i++) {
-        var candidate = candidates[i];
-        if (!candidate.preview_url) continue;
-        if (requestedIsrc && candidate.isrc && requestedIsrc !== candidate.isrc) continue;
-        var exactIsrc = requestedIsrc && requestedIsrc === candidate.isrc;
-        if (!exactIsrc && (matchingName(trackName) !== matchingName(candidate.name) ||
-            !matchingArtists(artistName, candidate.artists) ||
-            !requestedDuration || !candidate.duration_ms ||
-            Math.abs(requestedDuration - candidate.duration_ms) > 5000)) continue;
-        cacheDownloadTrack(candidate, candidate.id);
-        return { available: true, track_id: candidate.id, prepared_context: { track: candidate } };
+    for (var queryIndex = 0; queryIndex < queries.length; queryIndex++) {
+        if (typeof utils !== 'undefined' && typeof utils.isDownloadCancelled === 'function' && utils.isDownloadCancelled()) {
+            return { available: false, reason: 'download cancelled' };
+        }
+        var candidates = searchSongsService(queries[queryIndex], 20);
+        for (var i = 0; i < candidates.length; i++) {
+            var candidate = candidates[i];
+            if (!candidate.preview_url) continue;
+            if (requestedIsrc && candidate.isrc && requestedIsrc !== candidate.isrc) continue;
+            var exactIsrc = requestedIsrc && requestedIsrc === candidate.isrc;
+            if (!exactIsrc && (matchingName(stripTrackTitleAnnotations(trackName)) !== matchingName(stripTrackTitleAnnotations(candidate.name)) ||
+                !matchingArtists(artistName, candidate.artists) ||
+                !requestedDuration || !candidate.duration_ms ||
+                Math.abs(requestedDuration - candidate.duration_ms) > 5000)) continue;
+            cacheDownloadTrack(candidate, candidate.id);
+            return { available: true, track_id: candidate.id, prepared_context: { track: candidate } };
+        }
     }
     return { available: false, reason: 'No matching JioSaavn recording' };
+}
+
+function stripTrackTitleAnnotations(value) {
+    return String(value || '').replace(/[(\[]\s*(?:(?:feat\.?|ft\.?|featuring|with)\s+[^)\]]+|from\s+["“][^)\]]+["”]\s*)[)\]]/gi, function(annotation) {
+        if (/^[(\[]\s*with\b/i.test(annotation) &&
+            /\b(?:mix|remix|live|acoustic|demo|instrumental|karaoke|edit|extended|slowed|sped)\b/i.test(annotation)) {
+            return annotation;
+        }
+        return ' ';
+    });
 }
 
 function matchingName(value) {

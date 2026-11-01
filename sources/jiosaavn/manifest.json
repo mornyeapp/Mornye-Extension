@@ -1,7 +1,7 @@
 {
   "name": "jiosaavn",
   "displayName": "JioSaavn",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "Search and download JioSaavn AAC tracks, browse albums, playlists, artists, and the home feed.",
   "author": "HemanthJabalpuri; Mornye compatibility fixes",
   "homepage": "https://github.com/HemanthJabalpuri/spotiflac-jiosaavn-extension",

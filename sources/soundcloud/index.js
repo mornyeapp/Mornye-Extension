@@ -854,7 +854,9 @@ function checkAvailability(isrc, trackName, artistName, options) {
 
   // If we have a SoundCloud track ID in options
   var scId = options && options.spotify_id;
-  if (scId && /^\d{5,}$/.test(scId)) {
+  var source = String(options && options.track && options.track.provider_id || "").trim().toLowerCase();
+  var directTrack = source === "soundcloud" || (!source && !trackName && !artistName);
+  if (directTrack && scId && /^\d{5,}$/.test(scId)) {
     // Verify it exists and is playable
     try {
       var track = fetchTrackData(scId);
@@ -894,18 +896,29 @@ function checkAvailability(isrc, trackName, artistName, options) {
     if (options && options.duration_ms) {
       targetDurationMs = Number(options.duration_ms) || 0;
     }
-    var data = scGet("search/tracks?q=" + encodeURIComponent(query),
-      "limit=5&access=playable");
-    var tracks = data.collection || [];
+    var queries = [query];
+    var strippedTitle = stripTrackTitleAnnotations(trackName).replace(/\s+/g, " ").trim();
+    if (strippedTitle && strippedTitle !== String(trackName || "").trim()) {
+      var strippedQuery = (strippedTitle + " " + (artistName || "")).trim();
+      if (queries.indexOf(strippedQuery) < 0) queries.push(strippedQuery);
+    }
+    for (var i = 0; i < queries.length; i++) {
+      if (utils && typeof utils.isDownloadCancelled === "function" && utils.isDownloadCancelled()) {
+        return { available: false, reason: "download cancelled" };
+      }
+      var data = scGet("search/tracks?q=" + encodeURIComponent(queries[i]),
+        "limit=5&access=playable");
+      var tracks = data.collection || [];
 
-    var best = findBestMatch(tracks, trackName, artistName, targetDurationMs, 65);
-    if (best && best.access === "playable" && best.streamable !== false) {
-      trackCacheSet(best.id, best);
-      return {
-        available: true,
-        track_id: String(best.id),
-        prepared_context: { track: best }
-      };
+      var best = findBestMatch(tracks, trackName, artistName, targetDurationMs, 65, true);
+      if (best && best.access === "playable" && best.streamable !== false) {
+        trackCacheSet(best.id, best);
+        return {
+          available: true,
+          track_id: String(best.id),
+          prepared_context: { track: best }
+        };
+      }
     }
 
     return { available: false, reason: "No confident playable match found on SoundCloud" };
@@ -1212,22 +1225,43 @@ function deleteSoundCloudFile(path) {
 // MATCHING
 // ============================================
 
-function findBestMatch(tracks, targetName, targetArtist, targetDurationMs, minScore) {
+function stripTrackTitleAnnotations(value) {
+  return String(value || "").replace(/[(\[]\s*(?:(?:feat\.?|ft\.?|featuring|with)\s+[^)\]]+|from\s+["“][^)\]]+["”]\s*)[)\]]/gi, function(annotation) {
+    if (/^[(\[]\s*with\b/i.test(annotation) &&
+        /\b(?:mix|remix|live|acoustic|demo|instrumental|karaoke|edit|extended|slowed|sped)\b/i.test(annotation)) {
+      return annotation;
+    }
+    return " ";
+  });
+}
+
+function findBestMatch(tracks, targetName, targetArtist, targetDurationMs, minScore, verifyRecording) {
   if (!tracks || tracks.length === 0) return null;
 
   var bestScore = -1;
   var bestTrack = null;
+  var targetTitle = stripTrackTitleAnnotations(targetName);
 
   for (var i = 0; i < tracks.length; i++) {
     var t = tracks[i];
-    var tTitle = t.title || "";
+    var tTitle = stripTrackTitleAnnotations(t.title);
     var tArtist = (t.publisher_metadata && t.publisher_metadata.artist) ||
                   t.metadata_artist ||
                   (t.user && t.user.username) || "";
     var score = 0;
 
-    score += matching.compareStrings(targetName || "", tTitle) * 50;
-    score += matching.compareStrings(targetArtist || "", tArtist) * 30;
+    var artistScore = matching.compareStrings(targetArtist || "", tArtist);
+    if (verifyRecording) {
+      var expectedTitle = normalizeText(targetTitle);
+      var candidateTitle = normalizeText(tTitle);
+      var version = /\b(?:mix|remix|live|acoustic|demo|instrumental|karaoke|edit|extended|slowed|sped)\b/;
+      if (expectedTitle !== candidateTitle &&
+          (version.test(expectedTitle) || version.test(candidateTitle))) continue;
+      if (targetArtist && artistScore < 0.5) continue;
+      if (targetDurationMs > 0 && t.duration > 0 && Math.abs(targetDurationMs - t.duration) > 15000) continue;
+    }
+    score += matching.compareStrings(targetTitle, tTitle) * 50;
+    score += artistScore * 30;
 
     if (targetDurationMs > 0 && t.duration) {
       score += matching.compareDuration(targetDurationMs, t.duration) * 20;

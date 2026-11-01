@@ -3375,6 +3375,36 @@ function customSearchSync(query, options) {
 var RELATED_MAX_SEEDS = 5;
 var RELATED_DURATION_TOLERANCE_MS = 15000;
 
+function stripTrackTitleAnnotations(value) {
+  return String(value || "").replace(/[(\[]\s*(?:(?:feat\.?|ft\.?|featuring|with)\s+[^)\]]+|from\s+["“][^)\]]+["”]\s*)[)\]]/gi, function(annotation) {
+    if (/^[(\[]\s*with\b/i.test(annotation) &&
+        /\b(?:mix|remix|live|acoustic|demo|instrumental|karaoke|edit|extended|slowed|sped)\b/i.test(annotation)) {
+      return annotation;
+    }
+    return " ";
+  });
+}
+
+function downloadMatchValue(value) {
+  return String(value || "").toLowerCase().replace(/&/g, " and ")
+    .replace(/[^a-z0-9\u0080-\uffff]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function downloadRecordingMatches(trackName, artistName, durationMs, candidate) {
+  var titleKey = downloadMatchValue(stripTrackTitleAnnotations(trackName));
+  if (!titleKey || titleKey !== downloadMatchValue(stripTrackTitleAnnotations(candidate.name || candidate.title))) return false;
+  if (artistName) {
+    var artistText = " " + downloadMatchValue(candidate.artists) + " ";
+    var artists = String(artistName).split(/[,;&]|\s+(?:and|feat\.?|ft\.?|featuring|x)\s+/i);
+    if (!artists.some(function(artist) {
+      var key = downloadMatchValue(artist);
+      return key && artistText.indexOf(" " + key + " ") >= 0;
+    })) return false;
+  }
+  var candidateDuration = Number(candidate.duration_ms || 0);
+  return !(durationMs > 0 && candidateDuration > 0 && Math.abs(durationMs - candidateDuration) > 15000);
+}
+
 function relatedTitleKey(value) {
   return metadataMatchValue(
     String(value || "").replace(/\s*[\(\[][^\)\]]*[\)\]]/g, " "),
@@ -5941,7 +5971,9 @@ registerExtension({
     L("info", "[YTMusic] checkAvailability:", isrc, trackName, artistName);
 
     var spotifyId = options && options.spotify_id ? options.spotify_id : null;
-    if (spotifyId && /^[A-Za-z0-9_-]{11}$/.test(spotifyId)) {
+    var source = String(options && options.track && options.track.provider_id || "").trim().toLowerCase();
+    var directTrack = source === "ytmusic-spotiflac" || (!source && !trackName && !artistName);
+    if (directTrack && spotifyId && /^[A-Za-z0-9_-]{11}$/.test(spotifyId)) {
       L("info", "[YTMusic] spotify_id looks like a video ID:", spotifyId);
       return { available: true, track_id: spotifyId };
     }
@@ -5952,31 +5984,29 @@ registerExtension({
     }
 
     try {
-      var results = performSearchSync(query, YT_SEARCH_PARAMS.tracks);
-      if (!results || results.length === 0) {
-        L("info", "[YTMusic] No search results for:", query);
-        return { available: false, reason: "not_found" };
+      var queries = [query.trim()];
+      var strippedTitle = stripTrackTitleAnnotations(trackName).replace(/\s+/g, " ").trim();
+      if (strippedTitle && strippedTitle !== String(trackName || "").trim()) {
+        var strippedQuery = ((artistName ? artistName + " " : "") + strippedTitle).trim();
+        if (queries.indexOf(strippedQuery) < 0) queries.push(strippedQuery);
       }
-
-      for (var i = 0; i < results.length; i++) {
-        var item = results[i];
-        if (
-          item &&
-          item.id &&
-          (item.item_type === "track" || item.type === "track")
-        ) {
-          L("info", "[YTMusic] Found track:", item.id, item.name || item.title);
-          return { available: true, track_id: item.id };
+      var durationMs = Number(options && (options.duration_ms || options.track && options.track.duration_ms) || 0);
+      for (var queryIndex = 0; queryIndex < queries.length; queryIndex++) {
+        if (utils && typeof utils.isDownloadCancelled === "function" && utils.isDownloadCancelled()) {
+          return { available: false, reason: "download cancelled" };
+        }
+        var results = performSearchSync(queries[queryIndex], YT_SEARCH_PARAMS.tracks) || [];
+        for (var i = 0; i < results.length; i++) {
+          var item = results[i];
+          if (item && item.id && (item.item_type === "track" || item.type === "track") &&
+              downloadRecordingMatches(trackName, artistName, durationMs, item)) {
+            L("info", "[YTMusic] Found verified track:", item.id, item.name || item.title);
+            return { available: true, track_id: item.id };
+          }
         }
       }
 
-      // Fallback: use first result regardless of type
-      if (results[0] && results[0].id) {
-        L("info", "[YTMusic] Using first result as fallback:", results[0].id);
-        return { available: true, track_id: results[0].id };
-      }
-
-      return { available: false, reason: "no_video_id_in_results" };
+      return { available: false, reason: "No verified YouTube Music track match found" };
     } catch (e) {
       L("error", "[YTMusic] checkAvailability error:", String(e));
       return { available: false, reason: "search_error: " + String(e) };

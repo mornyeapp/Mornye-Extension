@@ -3039,28 +3039,47 @@ function availabilityArtistMatches(candidate, expected) {
     expectedKey.indexOf(candidateKey) >= 0;
 }
 
+function stripAvailabilityTitleAnnotations(value) {
+  return String(value || "").replace(/[(\[]\s*(?:(?:feat\.?|ft\.?|featuring|with)\s+[^)\]]+|from\s+["“][^)\]]+["”]\s*)[)\]]/gi, function(annotation) {
+    if (/^[(\[]\s*with\b/i.test(annotation) &&
+        /\b(?:mix|remix|live|acoustic|demo|instrumental|karaoke|edit|extended|slowed|sped)\b/i.test(annotation)) {
+      return annotation;
+    }
+    return " ";
+  }).replace(/\s+/g, " ").trim();
+}
+
 function resolveAmazonTrackBySearch(trackName, artistName, durationMs) {
-  var titleKey = normalizeAvailabilityMatchText(trackName);
+  var strippedTitle = stripAvailabilityTitleAnnotations(trackName);
+  var titleKey = normalizeAvailabilityMatchText(strippedTitle);
   if (!titleKey) return null;
 
-  var results = customSearchSync(trackName, { filter: "songs" });
+  var queries = [String(trackName || "").trim()];
+  if (strippedTitle !== queries[0]) {
+    var artistQuery = (strippedTitle + " " + (artistName || "")).trim();
+    if (queries.indexOf(artistQuery) < 0) queries.push(artistQuery);
+    if (queries.indexOf(strippedTitle) < 0) queries.push(strippedTitle);
+  }
   var expectedDuration = Number(durationMs || 0);
-  for (var i = 0; i < results.length; i++) {
-    var candidate = results[i] || {};
-    if (candidate.item_type !== "track") continue;
-    if (normalizeAvailabilityMatchText(candidate.name) !== titleKey) continue;
-    if (!availabilityArtistMatches(candidate.artists, artistName)) continue;
+  for (var queryIndex = 0; queryIndex < queries.length; queryIndex++) {
+    var results = customSearchSync(queries[queryIndex], { filter: "songs" });
+    for (var i = 0; i < results.length; i++) {
+      var candidate = results[i] || {};
+      if (candidate.item_type !== "track") continue;
+      if (normalizeAvailabilityMatchText(stripAvailabilityTitleAnnotations(candidate.name)) !== titleKey) continue;
+      if (!availabilityArtistMatches(candidate.artists, artistName)) continue;
 
-    var candidateDuration = Number(candidate.duration_ms || 0);
-    if (expectedDuration > 0 && candidateDuration > 0 &&
-        Math.abs(expectedDuration - candidateDuration) > 15000) {
-      continue;
-    }
+      var candidateDuration = Number(candidate.duration_ms || 0);
+      if (expectedDuration > 0 && candidateDuration > 0 &&
+          Math.abs(expectedDuration - candidateDuration) > 15000) {
+        continue;
+      }
 
-    var asin = normalizeASIN(String(candidate.id || ""));
-    if (asin) {
-      L("info", "[Amazon] Found exact Amazon track via search:", asin);
-      return asin;
+      var asin = normalizeASIN(String(candidate.id || ""));
+      if (asin) {
+        L("info", "[Amazon] Found exact Amazon track via search:", asin);
+        return asin;
+      }
     }
   }
   L("info", "[Amazon] Amazon search had no exact track match for:", trackName, artistName);

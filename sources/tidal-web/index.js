@@ -692,7 +692,13 @@ function artistNamesMatch(expected, found) {
 }
 
 function stripTrackTitleAnnotations(value) {
-  return String(value || "").replace(/[(\[]\s*(?:(?:feat\.?|ft\.?|featuring)\s+[^)\]]+|from\s+["“][^)\]]+["”]\s*)[)\]]/gi, " ");
+  return String(value || "").replace(/[(\[]\s*(?:(?:feat\.?|ft\.?|featuring|with)\s+[^)\]]+|from\s+["“][^)\]]+["”]\s*)[)\]]/gi, function(annotation) {
+    if (/^[(\[]\s*with\b/i.test(annotation) &&
+        /\b(?:mix|remix|live|acoustic|demo|instrumental|karaoke|edit|extended|slowed|sped)\b/i.test(annotation)) {
+      return annotation;
+    }
+    return " ";
+  });
 }
 
 function normalizeTrackIdentityTitle(value) {
@@ -2533,8 +2539,15 @@ function checkAvailability(isrc, trackName, artistName, options) {
 
     var queries = [query];
     var titleQuery = String(trackName || "").trim();
+    var strippedTitleQuery = stripTrackTitleAnnotations(titleQuery).replace(/\s+/g, " ").trim();
     var normalizedTitleQuery = normalizeTrackIdentityTitle(titleQuery);
-    [titleQuery, normalizedTitleQuery].forEach(function(candidateQuery) {
+    var simplerQueries = [titleQuery];
+    if (strippedTitleQuery && strippedTitleQuery !== titleQuery) {
+      simplerQueries.push((strippedTitleQuery + " " + (artistName || "")).trim());
+      simplerQueries.push(strippedTitleQuery);
+    }
+    simplerQueries.push(normalizedTitleQuery);
+    simplerQueries.forEach(function(candidateQuery) {
       if (candidateQuery && queries.indexOf(candidateQuery) < 0) {
         queries.push(candidateQuery);
       }

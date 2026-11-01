@@ -89,3 +89,20 @@ test('identical fallback queries are not repeated', () => {
   assert.equal(app.context.checkAvailability('', 'signal', '', {}).available, false);
   assert.deepEqual(app.queries, ['signal']);
 });
+
+test('Apple with credits do not hide the matching TIDAL recording from search', () => {
+  const raw = {
+    id: '76', title: 'Dovein Nain', artists: [{ name: 'Jenny Johal' }],
+    isrc: 'UKC5K1600606', duration: 188,
+  };
+  const app = load(query => query === 'Dovein Nain Jenny Johal' ? [raw] : []);
+  app.context.fetchTrack = () => raw;
+  const result = app.context.checkAvailability(raw.isrc, 'Dovein Nain (with Jatinder Shah)', 'Jenny Johal', { duration_ms: 188000 });
+  assert.equal(result.available, true);
+  assert.equal(result.track_id, raw.id);
+  assert.deepEqual(app.queries, [
+    'Dovein Nain (with Jatinder Shah) Jenny Johal',
+    'Dovein Nain (with Jatinder Shah)',
+    'Dovein Nain Jenny Johal',
+  ]);
+});

@@ -65,6 +65,20 @@ for (const provider of ['qobuz-web', 'tidal-web']) {
     assert.equal(c.trackTitlesMatch('Bas Ek Kinng', 'Another Song (From "Bas Ek Kinng")'), false);
   });
 
+  test(`${provider}: with credits are annotations, while recording versions remain distinct`, () => {
+    assert.equal(c.trackTitlesMatch('Signal (with Guest Artist)', 'Signal'), true);
+    assert.equal(c.normalizeTrackIdentityTitle('Signal (with Guest Artist)'), c.normalizeTrackIdentityTitle('Signal'));
+    assert.equal(c.trackTitlesMatch('Signal (with Guest Artist) [Live]', 'Signal'), false);
+    assert.equal(c.trackTitlesMatch('Signal (with Live Band)', 'Signal'), false);
+    assert.equal(c.trackTitlesMatch('Signal (with Guest Artist) (Club Mix)', 'Signal (Radio Mix)'), false);
+    const matches = c[provider === 'qobuz-web' ? 'qobuzTrackMatchesRequest' : 'tidalTrackMatchesRequest'];
+    const candidate = provider === 'qobuz-web'
+      ? { id: '1', title: 'Signal', performer: { name: 'Lead Artist' }, isrc: 'USAAA0000001', duration: 220 }
+      : { id: '1', name: 'Signal', artists: 'Lead Artist', isrc: 'USAAA0000001', duration: 220 };
+    assert.equal(matches(candidate, 'USAAA0000001', 'Signal (with Guest Artist)', 'Lead Artist', 200000), true);
+    assert.equal(matches(candidate, '', 'Signal (with Guest Artist)', 'Lead Artist', 200000), false);
+  });
+
   test(`${provider}: ISRC and recording names resolve conflicting catalog durations`, () => {
     const matching = c[provider === 'qobuz-web' ? 'qobuzTrackMatchesRequest' : 'tidalTrackMatchesRequest'];
     const candidate = (title, isrc, duration) => provider === 'qobuz-web'

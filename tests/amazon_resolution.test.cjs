@@ -120,3 +120,33 @@ test('older hosts use Chrome 152 fallback user agents', () => {
   assert.ok(app.context.USER_AGENTS.every(ua => ua.includes('Chrome/152.0.0.0')));
   assert.ok(app.context.getRandomUA().includes('Chrome/152.0.0.0'));
 });
+
+test('Apple track six falls back to Amazon catalog search without its contributor suffix', () => {
+  const app = runtime(() => assert.fail('unexpected HTTP request'));
+  app.context.resolveAmazonURL = () => null;
+  const queries = [];
+  app.context.customSearchSync = (query, options) => {
+    assert.equal(options.filter, 'songs');
+    queries.push(query);
+    return query === 'Dovein Nain Jenny Johal' ? [{
+      id: 'B000000006', item_type: 'track', name: 'Dovein Nain',
+      artists: 'Jenny Johal feat. Jatinder Shah', duration_ms: 188000,
+    }] : [];
+  };
+  const result = app.extension.checkAvailability('UKC5K1600606', 'Dovein Nain (with Jatinder Shah)', 'Jenny Johal', { duration_ms: 188000 });
+  assert.equal(result.available, true);
+  assert.equal(result.track_id, 'B000000006');
+  assert.deepEqual(queries, ['Dovein Nain (with Jatinder Shah)', 'Dovein Nain Jenny Johal']);
+});
+
+test('simplifying Apple credits keeps artist, duration and recording checks', () => {
+  for (const candidate of [
+    { name: 'Signal (Live)', artists: 'Lead Artist', duration_ms: 180000 },
+    { name: 'Signal', artists: 'Another Artist', duration_ms: 180000 },
+    { name: 'Signal', artists: 'Lead Artist', duration_ms: 30000 },
+  ]) {
+    const app = runtime(() => assert.fail('unexpected HTTP request'));
+    app.context.customSearchSync = () => [{ id: 'B000000006', item_type: 'track', ...candidate }];
+    assert.equal(app.context.resolveAmazonTrackBySearch('Signal (with Guest Artist)', 'Lead Artist', 180000), null);
+  }
+});
