@@ -1,6 +1,6 @@
 // ============================================
 // Apple Music Extension for Mornye
-// Version: 1.4.15
+// Version: 1.4.16
 //
 // Uses Apple Music's public catalog API (amp-api)
 // to fetch metadata including ISRC. No login required.
@@ -665,8 +665,9 @@ function parseAppleMusicURL(url) {
   // https://music.apple.com/{storefront}/playlist/{name}/{id}
   // https://music.apple.com/{storefront}/artist/{name}/{id}
   // https://music.apple.com/{storefront}/song/{name}/{id}
+  // Shared links may omit {name}; user playlist IDs contain a hyphen (pl.u-...).
   var match = url.match(
-    /music\.apple\.com\/([a-z]{2})\/(album|playlist|artist|song)\/[^/]*\/([a-z0-9.]+)/i
+    /^(?:https?:\/\/)?music\.apple\.com\/([a-z]{2})\/(album|playlist|artist|song)\/(?:[^/?#]+\/)?([a-z0-9.-]+)\/?(?:[?#]|$)/i
   );
   if (!match) return null;
 
@@ -675,7 +676,7 @@ function parseAppleMusicURL(url) {
   var id = match[3];
 
   // Check for ?i=songId on album URLs
-  var songMatch = url.match(/[?&]i=(\d+)/);
+  var songMatch = url.split("#")[0].match(/[?&]i=(\d+)(?:&|$)/);
 
   if (type === "album" && songMatch) {
     return { type: "track", id: songMatch[1], storefront: storefront };
