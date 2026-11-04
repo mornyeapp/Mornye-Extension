@@ -664,7 +664,7 @@ function formatTrack(trackData, context) {
     composer: composerNames(trackData, gatewayTrack),
     comment: albumURL,
     explicit: isExplicit,
-    audio_quality: "16bit/44.1kHz"
+    audio_quality: trackAudioQuality(trackData, gatewayTrack)
   };
 }
 
@@ -1350,6 +1350,55 @@ function decryptDownloadedFile(encryptedPath, outputPath, trackID, onProgress) {
   return transformResult.path || outputPath;
 }
 
+function trackAudioQuality(trackData, gatewayTrack) {
+  var measured = cacheGet("audio-quality:" + String(trackData && trackData.id || ""));
+  if (measured) return measured;
+  var source = gatewayTrack || trackData || {};
+  if (Number(source.FILESIZE_FLAC_24 || 0) > 0) return "24-bit FLAC";
+  // Catalog metadata does not normally expose the source sample rate.
+  return "FLAC";
+}
+
+function descriptorOutputExtension(descriptor) {
+  var format = String(descriptor.deezer_source_format || descriptor.deezer_format || "FLAC").toUpperCase();
+  return format.indexOf("MP3") === 0 ? "mp3" : "flac";
+}
+
+function downloadedAudioQuality(filePath, descriptor) {
+  var measured = null;
+  try {
+    if (typeof gobackend !== "undefined" && gobackend && typeof gobackend.getAudioQuality === "function") {
+      measured = gobackend.getAudioQuality(filePath);
+      if (measured && measured.error) measured = null;
+    }
+  } catch (probeError) {
+    log.debug("[DeezerExt] Audio quality probe unavailable:", probeError.message);
+  }
+
+  var bitDepth = Number(measured && (measured.bitDepth || measured.bit_depth) || 0);
+  var sampleRate = Number(measured && (measured.sampleRate || measured.sample_rate) || 0);
+  if (!isFinite(bitDepth) || bitDepth < 8 || bitDepth > 32 || Math.floor(bitDepth) !== bitDepth) bitDepth = 0;
+  if (!isFinite(sampleRate) || sampleRate < 8000 || sampleRate > 768000 || Math.floor(sampleRate) !== sampleRate) sampleRate = 0;
+
+  var sourceFormat = String(descriptor.deezer_source_format || "").toUpperCase();
+  var codec = String(measured && measured.codec || descriptorOutputExtension(descriptor)).toLowerCase();
+  if (!bitDepth && codec === "flac") {
+    if (sourceFormat === "FLAC_24") bitDepth = 24;
+    else if (sourceFormat === "FLAC") bitDepth = 16;
+  }
+  var label = codec === "mp3" ? "MP3" : "FLAC";
+  if (bitDepth && sampleRate) label = bitDepth + "bit/" + (sampleRate / 1000) + "kHz";
+  else if (bitDepth) label = bitDepth + "-bit FLAC";
+
+  return {
+    bit_depth: bitDepth,
+    sample_rate: sampleRate,
+    audio_quality: label,
+    audio_codec: codec,
+    actual_container: codec === "mp3" ? "mp3" : "flac"
+  };
+}
+
 function download(trackID, quality, outputPath, onProgress, options) {
   var resolvedTrackID = parseTrackID(trackID);
   if (!resolvedTrackID) {
@@ -1392,7 +1441,7 @@ function download(trackID, quality, outputPath, onProgress, options) {
   }
 
   var requiresClientDecryption = descriptorRequiresClientDecryption(descriptor);
-  var normalizedOutputPath = ensureOutputExtension(outputPath, (descriptor.deezer_format || "flac").toLowerCase());
+  var normalizedOutputPath = ensureOutputExtension(outputPath, descriptorOutputExtension(descriptor));
   var encryptedPath = requiresClientDecryption ? buildEncryptedTempPath(normalizedOutputPath) : normalizedOutputPath;
 
   if (typeof onProgress === "function") {
@@ -1417,7 +1466,8 @@ function download(trackID, quality, outputPath, onProgress, options) {
   try {
     if (requiresClientDecryption) {
       var encryptedLocalPath = downloadResult.path || encryptedPath;
-      actualOutputPath = decryptDownloadedFile(encryptedLocalPath, normalizedOutputPath, resolvedTrackID, onProgress);
+      var mediaTrackID = parseTrackID(descriptor.deezer_track_id) || resolvedTrackID;
+      actualOutputPath = decryptDownloadedFile(encryptedLocalPath, normalizedOutputPath, mediaTrackID, onProgress);
       file.delete(encryptedLocalPath);
     }
   } catch (e3) {
@@ -1428,6 +1478,11 @@ function download(trackID, quality, outputPath, onProgress, options) {
       error_message: "Failed to decrypt Deezer stream: " + e3.message,
       error_type: "decrypt_error"
     };
+  }
+
+  var audioQuality = downloadedAudioQuality(actualOutputPath, descriptor);
+  if (audioQuality.bit_depth && audioQuality.sample_rate) {
+    cacheSet("audio-quality:" + resolvedTrackID, audioQuality.audio_quality);
   }
 
   if (typeof onProgress === "function") {
@@ -1466,8 +1521,11 @@ function download(trackID, quality, outputPath, onProgress, options) {
     copyright: completeMetadata ? completeMetadata.copyright : "",
     comment: completeMetadata ? completeMetadata.comment : "",
     explicit: completeMetadata ? completeMetadata.explicit : false,
-    bit_depth: 16,
-    sample_rate: 44100
+    bit_depth: audioQuality.bit_depth,
+    sample_rate: audioQuality.sample_rate,
+    audio_quality: audioQuality.audio_quality,
+    audio_codec: audioQuality.audio_codec,
+    actual_container: audioQuality.actual_container
   };
 }
 
