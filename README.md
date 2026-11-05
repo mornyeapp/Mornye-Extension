@@ -19,7 +19,7 @@
 ## Developing the bundled providers
 
 Spotify, Amazon, Apple Music, YouTube Music, SoundCloud, Tidal, Qobuz, Deezer, JioSaavn, Bugs Music,
-Melon, and Genie have reviewable source in `sources/<provider>/` and
+Melon, Genie, and Beatport have reviewable source in `sources/<provider>/` and
 offline regression tests in `tests/`. Edit the source, bump its manifest
 version, and run:
 
@@ -42,6 +42,11 @@ Signed-session providers omit `callbackUrl` so the host application supplies
 its own session-grant callback. This lets Mornye and older host versions
 return to the application that started verification. Package-only fixes keep
 the gateway's `appVersion` unchanged to preserve its existing session scope.
+
+Beatport requires Mornye 5.3.0 and the existing Beatport signed V2 gateway.
+Its original FLAC and AAC downloads are prepared on that server. See
+[`sources/beatport/README.md`](sources/beatport/README.md) for its runtime
+requirements and the bundled host-contract fixture provenance.
 
 Bugs Music, Melon, and Genie provide catalog metadata and URL imports. Their
 enrichment reads their own track details; it does not call the deprecated

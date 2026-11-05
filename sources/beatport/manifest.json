@@ -1,0 +1,110 @@
+{
+  "name": "beatport",
+  "displayName": "Beatport",
+  "version": "1.0.1",
+  "description": "Beatport track, artist and release search, artist discographies, and original FLAC or AAC 256 kbps downloads.",
+  "type": [
+    "metadata_provider",
+    "download_provider"
+  ],
+  "minAppVersion": "5.3.0",
+  "skipMetadataEnrichment": true,
+  "requiredRuntimeFeatures": [
+    "signedSession@3",
+    "sessionGrant@1",
+    "preparedContext@1"
+  ],
+  "signedSession": {
+    "namespace": "zarz-v2",
+    "baseUrl": "https://api.zarz.moe/v2",
+    "appVersion": "beatport@1.0.0",
+    "platform": "extension",
+    "schemeLabel": "ZARZ-HMAC-V1",
+    "headerPrefix": "X-Zarz-",
+    "timeWindowSeconds": 300,
+    "endpoints": {
+      "bootstrap": "/bootstrap",
+      "challenge": "/challenge",
+      "exchange": "/session/exchange",
+      "refresh": "/session/refresh"
+    }
+  },
+  "permissions": {
+    "network": [
+      "api.zarz.moe",
+      "geo-media.beatport.com",
+      "geo-samples.beatport.com"
+    ],
+    "storage": true,
+    "file": true
+  },
+  "qualityOptions": [
+    {
+      "id": "LOSSLESS",
+      "label": "FLAC Lossless",
+      "description": "Original lossless audio. Does not fall back to AAC.",
+      "kind": "lossless"
+    },
+    {
+      "id": "HIGH",
+      "label": "AAC 256 kbps",
+      "description": "Original AAC in M4A, without re-encoding.",
+      "kind": "lossy"
+    }
+  ],
+  "searchBehavior": {
+    "enabled": true,
+    "primary": false,
+    "placeholder": "Search Beatport...",
+    "thumbnailRatio": "square",
+    "filters": [
+      {
+        "id": "track",
+        "label": "Songs",
+        "icon": "music"
+      },
+      {
+        "id": "artist",
+        "label": "Artists",
+        "icon": "artist"
+      },
+      {
+        "id": "album",
+        "label": "Releases",
+        "icon": "album"
+      }
+    ]
+  },
+  "urlHandler": {
+    "enabled": true,
+    "patterns": [
+      "beatport.com",
+      "www.beatport.com"
+    ]
+  },
+  "capabilities": {
+    "downloadFallbackTier": "lossless",
+    "networkTimeoutSeconds": 120,
+    "downloadTransfer": {
+      "maxAttempts": 4,
+      "initialRetryDelayMs": 500,
+      "maxRetryDelayMs": 8000,
+      "resumePolicy": "validated",
+      "persistentCheckpoint": true,
+      "refreshStreamOnStatus": [401, 403, 404, 410],
+      "maxConcurrentDownloads": 2
+    }
+  },
+  "serviceHealth": [
+    {
+      "id": "beatport-api",
+      "label": "Beatport",
+      "url": "https://api.zarz.moe/v1/health",
+      "method": "GET",
+      "serviceKey": "beatport",
+      "timeoutMs": 5000,
+      "cacheTtlSeconds": 60,
+      "required": true
+    }
+  ]
+}
