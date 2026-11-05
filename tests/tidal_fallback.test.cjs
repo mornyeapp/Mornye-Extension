@@ -61,6 +61,40 @@ test('confirmed missing Atmos and hi-res tries CD FLAC', () => {
   assert.deepEqual(app.sleeps, []);
 });
 
+test('Max accepts a returned CD FLAC stream without discarding it and requesting again', () => {
+  const app = load(() => flac('LOSSLESS'));
+  const result = app.fetch('HI_RES_LOSSLESS');
+  assert.equal(result.resolvedQuality, 'LOSSLESS');
+  assert.equal(result.requestedQuality, 'HI_RES_LOSSLESS');
+  assert.equal(result.bitDepth, 16);
+  assert.deepEqual(app.qualities(), ['HI_RES_LOSSLESS']);
+  assert.equal(app.ticketCount(), 1);
+});
+
+for (const sampleRate of [44100, 48000, 96000]) {
+  test(`Max rejects a lossy ${sampleRate} Hz response and tries the lossless tier`, () => {
+    const app = load(({ body }) => body.quality === 'LOSSLESS' ? flac('LOSSLESS') : ok({ data: {
+      audioQuality: 'HIGH', sampleRate,
+      manifest: Buffer.from(JSON.stringify({ urls: ['https://offline.invalid/audio.m4a'], mimeType: 'audio/mp4' })).toString('base64'),
+    } }));
+    assert.equal(app.fetch('HI_RES_LOSSLESS').resolvedQuality, 'LOSSLESS');
+    assert.deepEqual(app.qualities(), ['HI_RES_LOSSLESS', 'LOSSLESS']);
+  });
+}
+
+test('a Max mirror response can supply CD FLAC without a second network request', () => {
+  const app = load(() => ({ statusCode: 503, error: 'Temporary failure' }));
+  let mirrorCalls = 0;
+  app.context.CONFIG.mirrorBaseURLs = ['https://mirror.example.test'];
+  app.context.fetchMirrorDownloadInfo = () => {
+    mirrorCalls++;
+    return { kind: 'direct', directURL: 'https://mirror.example.test/song.flac', bitDepth: 16, sampleRate: 44100, manifestMimeType: 'audio/flac' };
+  };
+  assert.equal(app.fetch('HI_RES_LOSSLESS').resolvedQuality, 'LOSSLESS');
+  assert.equal(mirrorCalls, 1);
+  assert.equal(app.mediaCalls().length, 1);
+});
+
 for (const error of ['Requested quality unavailable', 'track not available']) {
   test(`narrow legacy catalog message allows fallback: ${error}`, () => {
     const app = load(({ body }) => body.endpoint === 'manifests' ? { error } : flac());

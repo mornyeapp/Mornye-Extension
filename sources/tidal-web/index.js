@@ -934,13 +934,15 @@ function isHiResInfo(downloadInfo) {
 function isLosslessInfo(downloadInfo) {
   var audioQuality = String(downloadInfo && downloadInfo.audioQuality || "").toUpperCase();
   var mimeType = String(downloadInfo && downloadInfo.manifestMimeType || "").toLowerCase();
+  if (audioQuality === "HIGH" || audioQuality === "LOW" || isDolbyAtmosInfo(downloadInfo)) return false;
+  if (/audio\/(?:aac|mpeg|opus|eac3|ac3|ac4)\b/.test(mimeType)) return false;
   return isHiResInfo(downloadInfo) ||
     audioQuality === "LOSSLESS" ||
     mimeType.indexOf("audio/flac") >= 0;
 }
 
 function isCDLosslessInfo(downloadInfo) {
-  if (isHiResInfo(downloadInfo)) return false;
+  if (!isLosslessInfo(downloadInfo) || isHiResInfo(downloadInfo)) return false;
 
   var audioQuality = String(downloadInfo && downloadInfo.audioQuality || "").toUpperCase();
   var mimeType = String(downloadInfo && downloadInfo.manifestMimeType || "").toLowerCase();
@@ -957,7 +959,7 @@ function isCDLosslessInfo(downloadInfo) {
 function satisfiesQuality(downloadInfo, quality) {
   var normalized = normalizeDownloadQuality(quality);
   if (normalized === "DOLBY_ATMOS") return isDolbyAtmosInfo(downloadInfo);
-  if (normalized === "HI_RES_LOSSLESS") return isHiResInfo(downloadInfo);
+  if (normalized === "HI_RES_LOSSLESS") return isLosslessInfo(downloadInfo);
   if (normalized === "LOSSLESS") return isCDLosslessInfo(downloadInfo);
   return true;
 }
@@ -1189,7 +1191,10 @@ function fetchDownloadInfo(trackID, quality, rejectedCandidates) {
           var apiDownloadInfo = fetchAPIDownloadInfo(trackID, candidate, apiTicketID);
           apiTicketID = "";
           if (satisfiesQuality(apiDownloadInfo, candidate)) {
-            apiDownloadInfo.resolvedQuality = candidate;
+            // Max is a preference. Keep a usable CD FLAC response rather than
+            // discarding it and risking another request for the same stream.
+            apiDownloadInfo.resolvedQuality = candidate === "HI_RES_LOSSLESS" && !isHiResInfo(apiDownloadInfo)
+              ? "LOSSLESS" : candidate;
             apiDownloadInfo.requestedQuality = normalizeDownloadQuality(quality);
             apiDownloadInfo.candidateKey = apiCandidateKey;
             return apiDownloadInfo;
@@ -1223,7 +1228,8 @@ function fetchDownloadInfo(trackID, quality, rejectedCandidates) {
         try {
           var mirrorDownloadInfo = fetchMirrorDownloadInfo(trackID, candidate, rejectedCandidates);
           if (satisfiesQuality(mirrorDownloadInfo, candidate)) {
-            mirrorDownloadInfo.resolvedQuality = candidate;
+            mirrorDownloadInfo.resolvedQuality = candidate === "HI_RES_LOSSLESS" && !isHiResInfo(mirrorDownloadInfo)
+              ? "LOSSLESS" : candidate;
             mirrorDownloadInfo.requestedQuality = normalizeDownloadQuality(quality);
             return mirrorDownloadInfo;
           }
