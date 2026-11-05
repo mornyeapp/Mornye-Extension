@@ -15,6 +15,53 @@ function runtime() {
 const track = (id, extra = {}) => ({ id, title: 'Signal', performer: { name: 'Artist' },
   isrc: 'USAAA0000001', duration: 180, ...extra });
 
+test('a recovered soundtrack is reused when the next song has different singers', () => {
+  const c = runtime();
+  const album = { id: 'jolly2', title: 'Jolly LLB 2', tracks: { items: [
+    track('314150580', { title: 'Bawara Mann', isrc: 'INS181700030', performer: { name: 'Jubin Nautiyal' } }),
+    track('314150581', { title: 'Jolly Good Fellow', isrc: 'INS181700033', performer: { name: 'Meet Bros' } }),
+  ] } };
+  const options = { duration_ms: 180000, track: {
+    album_name: 'Jolly LLB 2 (Original Motion Picture Soundtrack)',
+    album_artist: 'Manj Musik, Chirrantan Bhatt, Meet Bros & Vishal Khurana',
+  } };
+  c.searchTracksViaAPI = () => { throw new Error('HTTP 429'); };
+  c.searchAlbumsViaAPI = query => {
+    if (query === 'Jolly LLB 2 jubin nautiyal') return [{ id: album.id }];
+    throw new Error('HTTP 429');
+  };
+  c.getMetadataJSON = () => album;
+  c.hydrateGenreHierarchy = () => {};
+  assert.equal(c.checkAvailability('INS181700030', 'Bawara Mann', 'Jubin Nautiyal & Neeti Mohan', options).track_id, '314150580');
+  let requests = 0;
+  c.searchTracksViaAPI = c.searchAlbumsViaAPI = c.getMetadataJSON = () => {
+    requests++;
+    throw new Error('HTTP 429');
+  };
+  assert.equal(c.checkAvailability('INS181700033', 'Jolly Good Fellow', 'Meet Bros, Shabbir Ahmed & Earl Edgar', options).track_id, '314150581');
+  assert.equal(requests, 0);
+  c.searchTracksViaAlbumSearch = c.searchTracksViaStore = () => [];
+  for (const [title, artist, duration] of [
+    ['Jolly Good Fellow (Remix)', 'Meet Bros', 180000],
+    ['Jolly Good Fellow', 'Unrelated Singer', 180000],
+    ['Jolly Good Fellow', 'Meet Bros', 300000],
+  ]) {
+    assert.equal(c.checkAvailability('', title, artist, { ...options, duration_ms: duration }).available, false);
+  }
+});
+
+test('failed metadata sources report the rate limit instead of a catalog miss', () => {
+  const c = runtime();
+  c.searchTracksViaAPI = c.searchAlbumsViaAPI = () => { throw new Error('HTTP 429: Upstream request failed'); };
+  c.searchTracksViaAlbumSearch = c.searchTracksViaStore = () => { throw new Error('HTTP 403'); };
+  const result = c.checkAvailability('INS181700033', 'Jolly Good Fellow', 'Meet Bros', {
+    duration_ms: 180000, track: { album_name: 'Jolly LLB 2' },
+  });
+  assert.equal(result.available, false);
+  assert.match(result.reason, /429/);
+  assert.doesNotMatch(result.reason, /No verified/);
+});
+
 test('source album recovery precedes expensive hydration and reuses a cached release', () => {
   const c = runtime();
   const album = { id: 'ix7jv0x73q4sa', title: 'Race', tracks: { items: [

@@ -125,10 +125,10 @@
       "id": "qobuz-web",
       "name": "qobuz-web",
       "display_name": "Qobuz",
-      "version": "1.2.25",
+      "version": "1.2.26",
       "description": "Qobuz metadata and download provider for Mornye with resilient album search and track recovery, complete release metadata, credits, multi-disc totals, and original artwork.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/qobuz-web.sflx",
-      "sha256": "3307258a2ed0cd39c2c7f250bfb34ff8c8ce60182addb6e849f525d1bfc9a54b",
+      "sha256": "f6f96a60680bdbce247bc42873754e78d88f19ffb0eff3337ca64fca62071fe9",
       "category": "download",
       "tags": [
         "qobuz",
