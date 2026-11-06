@@ -1,7 +1,7 @@
 {
   "name": "deezer",
   "displayName": "Deezer",
-  "version": "1.3.10",
+  "version": "1.3.11",
   "description": "Deezer metadata and lossless Hi-Res downloads, with audio quality measured from each downloaded file and complete release metadata.",
   "homepage": "https://github.com/zarzet/SpotiFLAC-Mobile",
   "type": [

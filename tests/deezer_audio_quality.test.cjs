@@ -73,7 +73,7 @@ function runtime({
 }
 
 test('manifest advertises variable Hi-Res quality and keeps the signed-session scope', () => {
-  assert.equal(manifest.version, '1.3.10');
+  assert.equal(manifest.version, '1.3.11');
   assert.equal(manifest.qualityOptions[0].id, 'flac');
   assert.match(manifest.qualityOptions[0].label, /Hi-Res/);
   assert.match(manifest.qualityOptions[0].description, /up to 24-bit\/192 kHz/);

@@ -49,7 +49,7 @@ function runtime({ mixes = {}, get = () => json({ error: { code: 800 } }), mixEr
 }
 
 test('manifest declares related tracks', () => {
-  assert.equal(manifest.version, '1.3.10');
+  assert.equal(manifest.version, '1.3.11');
   assert.equal(manifest.capabilities.relatedTracks, true);
 });
 
