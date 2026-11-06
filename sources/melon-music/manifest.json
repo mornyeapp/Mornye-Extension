@@ -1,8 +1,8 @@
 {
   "name": "melon-music",
   "displayName": "Melon Music",
-  "version": "2.0.4",
-  "description": "Melon Music metadata provider with charts, album and artist catalogs, DJ playlists, and URL imports",
+  "version": "2.0.7",
+  "description": "Melon Music metadata, period and genre charts, HOT100, album and artist catalogs, DJ playlists, and URL imports",
   "author": "custom",
   "homepage": "https://github.com/ldw0403-netizen/K-Music",
   "permissions": {

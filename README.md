@@ -56,6 +56,46 @@ services publishes ISRC codes, so matching relies on titles, artists, and
 running times. Track and album lookups read running times from each service's
 player or mobile metadata; search results and charts do not carry them.
 
+### K-Music 2.0.7 review
+
+The third-party 2.0.6 archive was reviewed before updating these providers.
+Its SHA-256 is `8b629c145f44ad857fe7e48a661f7e09950d65b09354e8b8006bd1f6b1150c5c`.
+The archive contains readable JavaScript, manifests, and the same PNG icons
+already in this repository. No native executables, install scripts, dynamic
+code loading, file access, or persistent storage are included.
+
+The original submission fails 28 of the 97 existing provider regression tests.
+The reviewed update retains running times, mobile imports, complete album
+lists, source metadata, artwork fallbacks, and Bugs related tracks. It adds
+period charts, Bugs Music PD albums, and Genie DJ playlist imports. Genie home
+cards defer playlist and additional chart reads until opened.
+
+The submission's automatic cross-service ISRC/link search is excluded: relaxed
+artist-and-duration matching can select another recording and rewrite source
+titles. Requests remain on the declared service domains, and rate limits are
+not immediately retried. Source changes are rebuilt locally as `.sflx` packages
+with matching registry digests, rather than distributing the original archives.
+
+Run the offline checks and explicit read-only service checks separately:
+
+```sh
+node --test tests/k_music_*.test.cjs tests/bugs-music_related_tracks.test.cjs
+node scripts/check_k_music_live.cjs bugs-music melon-music genie-music
+node scripts/check_k_music_live.cjs --home bugs-music melon-music genie-music
+```
+
+Live checks never run as part of the offline tests. Cold home feeds took
+approximately 19 to 21 seconds on the review connection; these pages make
+multiple service requests and retain their existing five-minute cache.
+
+The ZIP and upstream repository do not include a license. On 2026-11-06 the
+Mornye maintainer confirmed that the author has granted redistribution
+permission. Static review establishes the inspected code paths; it is not a
+malware certification. The 114 K-Music regression tests pass, and live read-only
+checks verified search, track running times, daily/weekly charts, Bugs Music PD
+albums, and Genie DJ playlists. The locally rebuilt archives pass the package
+reproducibility and registry checksum checks.
+
 ## Review Process
 
 All submissions are reviewed before being added to the store.

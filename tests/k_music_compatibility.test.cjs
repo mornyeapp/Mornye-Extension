@@ -194,7 +194,8 @@ test('Melon: TOP100 and HOT100 keep distinct contents, including direct opening 
   assert.equal(r.extension.getAlbum('melon-top100').tracks[0].id, '11111');
   const feed = r.extension.getHomeFeed();
   assert.equal(feed.sections.find((s) => s.uri.endsWith(':hot100')).items[0].tracks[0].id, '22222');
-  assert.equal(r.calls.filter(({ url }) => url.includes('/chart/')).length, 2);
+  assert.equal(r.calls.filter(({ url }) => new URL(url).pathname === '/chart/index.htm').length, 1);
+  assert.equal(r.calls.filter(({ url }) => url.includes('/chart/hot100/')).length, 1);
   r.advance(5 * 60 * 1000 + 1);
   r.extension.getAlbum('melon-hot100');
   assert.equal(r.calls.filter(({ url }) => url.includes('/chart/hot100/')).length, 2);

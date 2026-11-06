@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-11-04T00:00:00Z",
+  "updated_at": "2026-11-05T00:00:00Z",
   "extensions": [
     {
       "id": "spotify-web",
@@ -165,10 +165,11 @@
       "id": "bugs-music",
       "name": "bugs-music",
       "display_name": "Bugs Music",
-      "version": "2.0.5",
-      "description": "Bugs Music metadata provider with accurate track and album details, artist catalogs, TOP100, genre charts, and URL imports.",
+      "version": "2.0.7",
+      "description": "Bugs Music metadata, artist catalogs, realtime/daily/weekly charts, genre charts, Music PD albums, and URL imports.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/bugs-music.sflx",
-      "sha256": "3500241ba9aac2e88c2dc8ac8d1ac49a8f0b897eca890420dd8d2b7fa35e7b9d",
+      "icon_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/icons/bugs-music.png",
+      "sha256": "f2303820ad05c32d58890b3de0e8516d3a49867945473173a27beca1ce150c87",
       "category": "integration",
       "tags": [
         "bugs",
@@ -178,17 +179,18 @@
         "homefeed"
       ],
       "downloads": 0,
-      "updated_at": "2026-10-28T00:00:00Z",
+      "updated_at": "2026-11-05T00:00:00Z",
       "min_app_version": "3.0.1"
     },
     {
       "id": "melon-music",
       "name": "melon-music",
       "display_name": "Melon Music",
-      "version": "2.0.4",
-      "description": "Melon Music metadata provider with song search, album and artist catalogs, DJ playlists, separate TOP100 and HOT100 charts, and URL imports.",
+      "version": "2.0.7",
+      "description": "Melon Music metadata, period and genre charts, HOT100, album and artist catalogs, DJ playlists, and URL imports.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/melon-music.sflx",
-      "sha256": "b40d17d70bd8c3395dd948e64dc815b0f29425913632b4fa54cc1d781eb3b94f",
+      "icon_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/icons/melon-music.png",
+      "sha256": "7d42fc931a4b5c7494b54db799809a16f35812bd44097ebccc89fa1685fa63be",
       "category": "integration",
       "tags": [
         "melon",
@@ -199,17 +201,18 @@
         "playlist"
       ],
       "downloads": 0,
-      "updated_at": "2026-10-23T00:00:00Z",
+      "updated_at": "2026-11-05T00:00:00Z",
       "min_app_version": "3.0.1"
     },
     {
       "id": "genie-music",
       "name": "genie-music",
       "display_name": "Genie Music",
-      "version": "2.0.4",
-      "description": "Genie Music metadata provider with track details, albums, paginated artist catalogs, TOP200, genre charts, and URL imports.",
+      "version": "2.0.7",
+      "description": "Genie Music metadata, paginated artist catalogs, period TOP200 charts, genre charts, DJ playlists, and URL imports.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/genie-music.sflx",
-      "sha256": "9ae3e2505bd08969575d001a7262e47323b827860682a52cf1253114becca331",
+      "icon_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/icons/genie-music.png",
+      "sha256": "f04692d3233d3555838ba86fd202c8250f4ed7c6e68dd2c78b6549a7a258f8d0",
       "category": "integration",
       "tags": [
         "genie",
@@ -219,7 +222,7 @@
         "homefeed"
       ],
       "downloads": 0,
-      "updated_at": "2026-10-23T00:00:00Z",
+      "updated_at": "2026-11-05T00:00:00Z",
       "min_app_version": "3.0.1"
     },
     {

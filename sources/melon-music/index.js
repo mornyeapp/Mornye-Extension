@@ -572,10 +572,10 @@ function customSearch(query, options) {
 
 function getAlbum(albumId) {
   var id = String(albumId || "").replace(PROVIDER_ID + ":album:", "").trim();
-  if (id === "top100" || id === "melon-top100" || id === "melon-hot100") {
-    var hot = id === "melon-hot100";
-    var cached = chartTracks(hot ? "hot" : "top");
-    return makeVirtualAlbum(id, hot ? "멜론 HOT 100" : "멜론 TOP 100", cached, cached[0].cover_url);
+  var chart = melonChartById(id);
+  if (chart) {
+    var cached = chartTracks(chart.key);
+    return makeVirtualAlbum(id, chart.title, cached, cached[0].cover_url);
   }
   id = resourceId(id, "album");
   var cachedAlbum = ALBUM_CACHE[id];
@@ -655,12 +655,44 @@ function getPlaylist(playlistId) {
     tracks: tracks.map(makeTrackResult), provider_id: PROVIDER_ID };
 }
 
+var MELON_CHARTS = [
+  { key: "top", id: "melon-top100", title: "멜론 TOP 100 실시간", path: "/chart/index.htm" },
+  { key: "day", id: "melon-top100-day", title: "멜론 TOP 100 일간", path: "/chart/day/index.htm" },
+  { key: "week", id: "melon-top100-week", title: "멜론 TOP 100 주간", path: "/chart/week/index.htm" },
+  { key: "month", id: "melon-top100-month", title: "멜론 TOP 100 월간", path: "/chart/month/index.htm" },
+  { key: "rise", id: "melon-top100-rise", title: "멜론 TOP 100 급상승", path: "/chart/rise/index.htm" },
+  { key: "hot", id: "melon-hot100", title: "멜론 HOT 100", path: "/chart/hot100/index.htm" }
+];
+var MELON_GENRES = [
+  ["GN0200", "댄스"], ["GN0300", "랩/힙합"], ["GN0400", "R&B/Soul"],
+  ["GN0500", "인디음악"], ["GN0600", "록/메탈"], ["GN0700", "트로트"],
+  ["GN0800", "포크/블루스"], ["GN0900", "해외 POP"], ["GN1000", "해외 록/메탈"],
+  ["GN1100", "해외 일렉트로니카"], ["GN1200", "해외 랩/힙합"]
+];
+MELON_GENRES.forEach(function(genre) {
+  MELON_CHARTS.push({ key: "genre-" + genre[0], id: "melon-genre-" + genre[0],
+    title: "멜론 " + genre[1] + " 최신곡", path: "/genre/song_list.htm?gnrCode=" + genre[0] });
+});
+
+function melonChartById(id) {
+  if (id === "top100") id = "melon-top100";
+  for (var i = 0; i < MELON_CHARTS.length; i++) {
+    if (MELON_CHARTS[i].id === id) return MELON_CHARTS[i];
+  }
+  return null;
+}
+
 function chartTracks(key) {
+  var definition = null;
+  for (var i = 0; i < MELON_CHARTS.length; i++) {
+    if (MELON_CHARTS[i].key === key) definition = MELON_CHARTS[i];
+  }
+  if (!definition) throw new Error("Unknown Melon chart: " + key);
   var cached = FEED_CACHE[key];
   if (cached && Date.now() - cached.time < CACHE_TTL_MS) return cached.tracks;
-  var path = key === "hot" ? "/chart/hot100/index.htm" : "/chart/index.htm";
-  var tracks = safeTracks(BASE_URL + path).slice(0, 100);
-  FEED_CACHE[key] = { time: Date.now(), tracks: tracks };
+  var tracks = safeTracks(BASE_URL + definition.path).slice(0, 100);
+  if (!tracks.length) throw new Error("Melon chart is unavailable: " + key);
+  cacheStore(FEED_CACHE, key, { time: Date.now(), tracks: tracks });
   return tracks;
 }
 
@@ -691,8 +723,21 @@ function djTodaySection() {
 }
 
 function getHomeFeed() {
-  var top = chartTracks("top");
-  var sections = [{ uri: PROVIDER_ID + ":top100", title: "멜론 TOP 100", items: [makeVirtualAlbum("melon-top100", "멜론 TOP 100", top, top[0].cover_url)] }];
+  if (FEED_CACHE.home && Date.now() - FEED_CACHE.home.time < CACHE_TTL_MS) return FEED_CACHE.home.value;
+  var sections = [], topItems = [], genreItems = [];
+  MELON_CHARTS.forEach(function(definition) {
+    if (definition.key === "hot") return;
+    try {
+      var tracks = chartTracks(definition.key);
+      var album = makeVirtualAlbum(definition.id, definition.title, tracks, tracks[0].cover_url);
+      if (definition.key.indexOf("genre-") === 0) genreItems.push(album);
+      else topItems.push(album);
+    } catch (error) {
+      log.warn("Melon optional chart unavailable: " + definition.key);
+    }
+  });
+  if (topItems.length) sections.push({ uri: PROVIDER_ID + ":top100", title: "멜론 TOP 100", items: topItems });
+  if (genreItems.length) sections.push({ uri: PROVIDER_ID + ":genre-charts", title: "장르별 최신곡", items: genreItems });
   try {
     var hot = chartTracks("hot");
     sections.push({ uri: PROVIDER_ID + ":hot100", title: "멜론 HOT 100", items: [makeVirtualAlbum("melon-hot100", "멜론 HOT 100", hot, hot[0].cover_url)] });
@@ -706,7 +751,10 @@ function getHomeFeed() {
   } catch (error) {
     log.warn("Melon DJ section unavailable: " + String(error.message || error));
   }
-  return { success: true, greeting: "Melon Music", sections: sections };
+  if (!sections.length) throw new Error("Melon home feed is unavailable");
+  var feed = { success: true, greeting: "Melon Music", sections: sections };
+  cacheStore(FEED_CACHE, "home", { time: Date.now(), value: feed });
+  return feed;
 }
 
 function enrichTrack(track) {

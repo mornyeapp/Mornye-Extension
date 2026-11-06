@@ -5,6 +5,8 @@ var ALBUM_CACHE = {};
 var ARTIST_CACHE = {};
 var TRACK_CACHE = {};
 var FEED_CACHE = {};
+var CHART_CACHE = {};
+var DJ_CACHE = {};
 var CACHE_TTL_MS = 5 * 60 * 1000;
 var DURATION_LOOKUP_LIMIT = 50;
 var DURATION_LOOKUP_BUDGET_MS = 10 * 1000;
@@ -22,6 +24,8 @@ function cleanup() {
   ARTIST_CACHE = {};
   TRACK_CACHE = {};
   FEED_CACHE = {};
+  CHART_CACHE = {};
+  DJ_CACHE = {};
   return {
     success: true
   };
@@ -412,7 +416,16 @@ function getAlbum(albumId) {
   var id = String(albumId || "").replace("genie-music:album:", "").trim();
   if (ALBUM_CACHE[id] && Date.now() - ALBUM_CACHE[id].time < CACHE_TTL_MS) return ALBUM_CACHE[id].value;
 
-  if (id === "genie-top200" || id === "top200") {
+  var dj = id.match(/^genie-dj-(\d+)$/);
+  if (dj) {
+    var playlist = getPlaylist(dj[1]);
+    return makeVirtualAlbum(id, playlist.name, playlist.tracks, playlist.cover_url);
+  }
+  var genre = genieGenreDefinition(id);
+  if (genre) return genieGenreAlbum(genre);
+  var period = genieChartDefinition(id);
+  if (period && period.id !== "genie-top200") return genieChartAlbum(period);
+  if (id === "genie-top200" || id === "top200" || id === "genie-top200-day") {
     var cached = Date.now() - TOP200_CACHE_TIME < CACHE_TTL_MS ? TOP200_CACHE : [];
     if (!cached.length) {
       cached = loadTop200();
@@ -487,12 +500,106 @@ function fillTrackDurations(tracks) {
   }
 }
 
-function loadTop200() {
-  var all = [];
-  for (var page = 1; page <= 4; page++) {
-    all = all.concat(safeTracks("https://www.genie.co.kr/chart/top200?ditc=D&rtm=N&pg=" + page));
+var GENIE_PERIOD_CHARTS = [
+  { id: "genie-top200-realtime", title: "지니 TOP 200 실시간", query: "ditc=D&rtm=Y" },
+  { id: "genie-top200", title: "지니 TOP 200 일간", query: "ditc=D&rtm=N" },
+  { id: "genie-top200-week", title: "지니 TOP 200 주간", query: "ditc=W&rtm=N" },
+  { id: "genie-top200-month", title: "지니 TOP 200 월간", query: "ditc=M&rtm=N" }
+];
+var GENIE_GENRE_CHARTS = [
+  {code: "M0100", name: "가요"}, {code: "M0200", name: "POP"},
+  {code: "M0300", name: "OST"}, {code: "M0107", name: "트롯"},
+  {code: "M0500", name: "JAZZ"}, {code: "M0600", name: "CLASSIC"},
+  {code: "E0000", name: "EDM"}, {code: "M0400", name: "JPOP"},
+  {code: "M0700", name: "뉴에이지"}, {code: "M0800", name: "CCM"}
+];
+
+function genieGenreDefinition(id) {
+  for (var i = 0; i < GENIE_GENRE_CHARTS.length; i++) {
+    if (id === "genie-genre-" + GENIE_GENRE_CHARTS[i].code) return GENIE_GENRE_CHARTS[i];
   }
-  return uniqueTracks(all).slice(0, 200);
+  return null;
+}
+
+function genieGenreAlbum(definition) {
+  var id = "genie-genre-" + definition.code, cached = CHART_CACHE[id];
+  if (cached && Date.now() - cached.time < CACHE_TTL_MS) return cached.value;
+  var tracks = firstAvailable(["https://www.genie.co.kr/chart/genre?ditc=D&genrecode=" + definition.code], 100);
+  if (!tracks.length) throw new Error("Genie genre chart is unavailable: " + definition.code);
+  var album = makeVirtualAlbum(id, "지니 " + definition.name + " 일간", tracks, tracks[0].cover_url);
+  cacheStore(CHART_CACHE, id, { time: Date.now(), value: album });
+  return album;
+}
+
+function genieChartDefinition(id) {
+  if (id === "top200" || id === "genie-top200-day") id = "genie-top200";
+  for (var i = 0; i < GENIE_PERIOD_CHARTS.length; i++) {
+    if (GENIE_PERIOD_CHARTS[i].id === id) return GENIE_PERIOD_CHARTS[i];
+  }
+  return null;
+}
+
+function genieChartAlbum(definition) {
+  var cached = CHART_CACHE[definition.id];
+  if (cached && Date.now() - cached.time < CACHE_TTL_MS) return cached.value;
+  var all = [], seen = {};
+  for (var page = 1; page <= 4; page++) {
+    var tracks = safeTracks("https://www.genie.co.kr/chart/top200?" + definition.query + "&pg=" + page);
+    if (!tracks.length) {
+      if (page > 1) throw new Error("Genie chart page is unavailable: " + page);
+      break;
+    }
+    var added = 0;
+    for (var i = 0; i < tracks.length; i++) {
+      if (seen[tracks[i].id]) continue;
+      seen[tracks[i].id] = true;
+      all.push(tracks[i]);
+      added++;
+    }
+    if (added === 0 || tracks.length < 50) break;
+  }
+  if (!all.length) throw new Error("Genie chart is unavailable: " + definition.id);
+  all = all.slice(0, 200);
+  var album = makeVirtualAlbum(definition.id, definition.title, all, all[0].cover_url);
+  cacheStore(CHART_CACHE, definition.id, { time: Date.now(), value: album });
+  return album;
+}
+
+function loadTop200() {
+  return genieChartAlbum(GENIE_PERIOD_CHARTS[1]).tracks;
+}
+
+function getPlaylist(playlistId) {
+  var id = resourceId(playlistId, "playlist"), cached = DJ_CACHE[id];
+  if (cached && Date.now() - cached.time < CACHE_TTL_MS) return cached.value;
+  var html = fetchHtml("https://www.genie.co.kr/playlist/detailView?plmSeq=" + id);
+  var tracks = uniqueTracks(parseTracks(primaryTrackTable(html)));
+  if (!tracks.length) throw new Error("Genie DJ playlist is unavailable: " + id);
+  var title = firstMatch(html, [/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']*)["']/i]);
+  title = title.replace(/\s*-\s*genie\s*$/i, "");
+  if (!title) throw new Error("Genie DJ playlist title is unavailable: " + id);
+  var cover = normalizeCoverUrl(firstMatch(html, [/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']*)["']/i])) || tracks[0].cover_url;
+  var playlist = makeVirtualAlbum(id, title, tracks, cover);
+  playlist.type = playlist.item_type = "playlist";
+  playlist.uri = PROVIDER_ID + ":playlist:" + id;
+  cacheStore(DJ_CACHE, id, { time: Date.now(), value: playlist });
+  return playlist;
+}
+
+function genieDjItems() {
+  var html = fetchHtml("https://www.genie.co.kr/");
+  var pattern = /plmSeq=(\d+)/g, match, seen = {}, items = [];
+  while ((match = pattern.exec(html)) && items.length < 8) {
+    var id = match[1];
+    if (seen[id]) continue;
+    seen[id] = true;
+    // Load one playlist page only when it is opened, not once per home card.
+    items.push({ id: "genie-dj-" + id, uri: PROVIDER_ID + ":album:genie-dj-" + id,
+      type: "album", item_type: "album", name: "지니 DJ 플레이리스트 " + id,
+      artists: "Genie DJ", cover_url: "", images: "", total_tracks: 0,
+      provider_id: PROVIDER_ID, tracks: [] });
+  }
+  return items;
 }
 
 function uniqueTracks(list) { var seen = {}; return (list || []).filter(function(t){ var k=String(t.id||""); if(!k||seen[k]) return false; seen[k]=true; return true; }); }
@@ -503,17 +610,31 @@ function getHomeFeed() {
   TOP200_CACHE = top;
   TOP200_CACHE_TIME = Date.now();
   var latest=firstAvailable(["https://www.genie.co.kr/newest/song"],50);
-  var genres = [
-    {code: "M0100", name: "가요"}, {code: "M0200", name: "POP"},
-    {code: "M0300", name: "OST"}, {code: "M0107", name: "트롯"},
-    {code: "M0500", name: "JAZZ"}, {code: "M0600", name: "CLASSIC"},
-    {code: "E0000", name: "EDM"}, {code: "M0400", name: "JPOP"},
-    {code: "M0700", name: "뉴에이지"}, {code: "M0800", name: "CCM"}
-  ];
+  var genres = GENIE_GENRE_CHARTS;
   var sections=[];
   if(top.length) sections.push({uri:"genie-music:top200",title:"지니 TOP 200",items:[makeVirtualAlbum("genie-top200","지니 TOP 200",top,top[0].cover_url)]});
+  if (top.length) {
+    for (var period = 0; period < GENIE_PERIOD_CHARTS.length; period++) {
+      if (period === 1) continue;
+      var definition = GENIE_PERIOD_CHARTS[period];
+      sections[0].items.push(makeVirtualAlbum(definition.id, definition.title, [], ""));
+    }
+  }
   if(latest.length) sections.push(makeSection("genie-music:latest","최신음악",latest));
-  for(var i=0;i<genres.length;i++){ var g=genres[i]; var gt=firstAvailable(["https://www.genie.co.kr/chart/genre?ditc=D&genrecode="+g.code],50); if(gt.length) sections.push(makeSection("genie-music:genre:"+g.code,g.name,gt)); }
+  for (var i = 0; i < genres.length; i++) {
+    try {
+      var genre = genieGenreAlbum(genres[i]);
+      sections.push({ uri: PROVIDER_ID + ":genre:" + genres[i].code, title: genres[i].name, items: [genre] });
+    } catch (error) {
+      log.warn("Genie optional genre chart unavailable: " + genres[i].code);
+    }
+  }
+  try {
+    var djItems = genieDjItems();
+    if (djItems.length) sections.push({ uri: PROVIDER_ID + ":dj-playlists", title: "지니 DJ 플레이리스트", items: djItems });
+  } catch (error) {
+    log.warn("Genie DJ playlists unavailable");
+  }
   if (!sections.length) throw new Error("Genie home feed is unavailable");
   var feed = {success:true,greeting:"Genie Music",sections:sections};
   FEED_CACHE = { time: Date.now(), feed: feed };
@@ -594,6 +715,14 @@ function getArtist(artistId) {
 }
 
 function handleUrl(url) {
+  var dj = String(url || "").match(/^https?:\/\/(?:[a-z0-9-]+\.)*genie\.co\.kr\/playlist\/detailView\?([^#]*)/i);
+  if (dj) {
+    var sequence = firstMatch(dj[1].replace(/&amp;/gi, "&"), [/(?:^|&)plmSeq=(\d+)(?:&|$)/i]);
+    if (!sequence) throw new Error("Genie URL has no valid playlist ID");
+    var playlist = getPlaylist(sequence);
+    return { type: "playlist", id: sequence, name: playlist.name, cover_url: playlist.cover_url,
+      playlist: playlist, tracks: playlist.tracks };
+  }
   // Mobile and other Genie subdomains share the desktop detail paths.
   var match = String(url || "").match(/^https?:\/\/(?:[a-z0-9-]+\.)*genie\.co\.kr\/detail\/(songInfo|albumInfo|artistInfo)\?([^#]*)/i);
   if (!match) return null;
@@ -622,6 +751,7 @@ registerExtension({
   getAlbum: getAlbum,
   getArtist: getArtist,
   getHomeFeed: getHomeFeed,
+  getPlaylist: getPlaylist,
   enrichTrack: enrichTrack,
   handleUrl: handleUrl
 });

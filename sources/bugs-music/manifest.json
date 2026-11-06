@@ -1,8 +1,8 @@
 {
   "name": "bugs-music",
   "displayName": "Bugs Music",
-  "version": "2.0.5",
-  "description": "Bugs Music search, track and album metadata, artist catalogs, charts, genre charts, and URL imports",
+  "version": "2.0.7",
+  "description": "Bugs Music metadata, artist catalogs, realtime/daily/weekly charts, genre charts, Music PD albums, and URL imports",
   "author": "ldw0403-netizen",
   "homepage": "https://github.com/ldw0403-netizen/K-Music",
   "icon": "icon.png",
@@ -10,7 +10,9 @@
     "network": [
       "music.bugs.co.kr",
       "image.bugsm.co.kr"
-    ]
+    ],
+    "storage": false,
+    "file": false
   },
   "type": [
     "metadata_provider"
@@ -32,6 +34,7 @@
       "https://music.bugs.co.kr/track/",
       "https://music.bugs.co.kr/album/",
       "https://music.bugs.co.kr/artist/",
+      "https://music.bugs.co.kr/musicpd/albumview/",
       "https://m.bugs.co.kr/track/",
       "https://m.bugs.co.kr/album/",
       "https://m.bugs.co.kr/artist/"

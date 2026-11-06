@@ -1,8 +1,8 @@
 {
   "name": "genie-music",
   "displayName": "Genie Music",
-  "version": "2.0.4",
-  "description": "Genie Music track and album metadata, paginated artist catalogs, charts, and URL imports",
+  "version": "2.0.7",
+  "description": "Genie Music metadata, paginated artist catalogs, period TOP200 charts, genre charts, DJ playlists, and URL imports",
   "author": "custom",
   "homepage": "https://github.com/ldw0403-netizen/K-Music",
   "permissions": {
@@ -32,7 +32,8 @@
     "patterns": [
       "genie.co.kr/detail/songInfo",
       "genie.co.kr/detail/albumInfo",
-      "genie.co.kr/detail/artistInfo"
+      "genie.co.kr/detail/artistInfo",
+      "genie.co.kr/playlist/detailView"
     ]
   },
   "skipMetadataEnrichment": false,
