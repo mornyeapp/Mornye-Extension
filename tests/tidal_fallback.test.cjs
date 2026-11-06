@@ -190,3 +190,61 @@ test('explicitly retryable track unavailability does not confirm quality absence
   assert.equal(app.ticketCount(), 1);
   assert.ok(app.qualities().every(quality => quality === 'DOLBY_ATMOS'));
 });
+
+test('a long ticket rate limit stops later tracks without another ticket request', () => {
+  const app = load(() => ({ statusCode: 200 }));
+  const original = app.context.session.signedFetch;
+  let ticketCalls = 0;
+  app.context.session.signedFetch = (method, url, body, headers) => {
+    if (url === '/tickets') {
+      ticketCalls++;
+      return { statusCode: 429, error: 'Temporarily blocked', retryAfterSeconds: 3600 };
+    }
+    return original(method, url, body, headers);
+  };
+  assert.throws(() => app.fetch('LOSSLESS'), error => error.code === 'RESOLUTION_TIMEOUT' || /rate limited|Temporarily blocked/.test(error.message));
+  assert.equal(ticketCalls, 1);
+  for (const trackID of ['222', '333', '444']) {
+    assert.throws(() => app.context.fetchDownloadInfo(trackID, 'LOSSLESS'), error => error.code === 'RESOLUTION_TIMEOUT');
+  }
+  assert.equal(ticketCalls, 1, 'the blocked client must not ask for tickets again');
+});
+
+test('a long ticket block is asked again after the cap, so a new network recovers', () => {
+  const app = load(() => flac('LOSSLESS'));
+  const clock = { now: 1_000_000 };
+  app.context.clock = clock;
+  vm.runInContext('Date.now = function () { return clock.now; };', app.context);
+  const original = app.context.session.signedFetch;
+  let refused = true;
+  let ticketCalls = 0;
+  app.context.session.signedFetch = (method, url, body, headers) => {
+    if (url === '/tickets') {
+      ticketCalls++;
+      if (refused) return { statusCode: 429, error: 'Temporarily blocked', retryAfterSeconds: 75151 };
+    }
+    return original(method, url, body, headers);
+  };
+  assert.throws(() => app.fetch('LOSSLESS'));
+  assert.equal(ticketCalls, 1);
+
+  clock.now += 14 * 60 * 1000;
+  assert.throws(() => app.context.fetchDownloadInfo('222', 'LOSSLESS'), error => error.code === 'RESOLUTION_TIMEOUT');
+  assert.equal(ticketCalls, 1, 'still inside the capped wait');
+
+  refused = false;
+  clock.now += 2 * 60 * 1000;
+  assert.equal(app.context.fetchDownloadInfo('333', 'LOSSLESS').resolvedQuality, 'LOSSLESS');
+  assert.equal(ticketCalls, 2);
+});
+
+test('a short ticket rate limit is not remembered across tracks', () => {
+  const app = load(() => ({ statusCode: 200 }));
+  let ticketCalls = 0;
+  app.context.session.signedFetch = (method, url) => {
+    if (url === '/tickets') { ticketCalls++; return ticketCalls === 1 ? { statusCode: 429, error: 'slow down', retryAfterSeconds: 2 } : ok({ ticket_id: 't' + ticketCalls }); }
+    return flac('LOSSLESS');
+  };
+  assert.equal(app.fetch('LOSSLESS').resolvedQuality, 'LOSSLESS');
+  assert.ok(ticketCalls >= 2);
+});

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-11-05T00:00:00Z",
+  "updated_at": "2026-11-06T00:00:00Z",
   "extensions": [
     {
       "id": "spotify-web",
@@ -145,10 +145,10 @@
       "id": "tidal-web",
       "name": "tidal-web",
       "display_name": "Tidal",
-      "version": "1.2.12",
+      "version": "1.2.13",
       "description": "TIDAL metadata, search, and download provider for Mornye with complete release, credits, explicit, and disc metadata from TIDAL Web.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/tidal-web.sflx",
-      "sha256": "adf9da10c548f64c8d29169a9f13b03e58ec0309f2aebb1c0828493f680b481e",
+      "sha256": "a9dea9aa8b4c55b04d412e14d20f062430ddc862c29f9f64b1aeda51ff47d591",
       "category": "download",
       "tags": [
         "tidal",
@@ -158,7 +158,7 @@
         "search"
       ],
       "downloads": 0,
-      "updated_at": "2026-11-02T00:00:00Z",
+      "updated_at": "2026-11-06T00:00:00Z",
       "min_app_version": "4.9.0"
     },
     {
