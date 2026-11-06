@@ -38,6 +38,11 @@ Pass provider directory names to rebuild a subset, for example
 Commit source, tests, packages, and registry changes together. Other providers
 remain package-only until their source is added to this layout.
 
+`utilities.sflx` is for the Python version of Mornye (Mornye-Python) only. It
+uses the Python runtime and provides the Spotify/Tidal metadata, browser solver,
+and signed-session modules that Mornye-Python loads at startup. It is
+package-only and is not built by `scripts/build_packages.py`.
+
 Signed-session providers omit `callbackUrl` so the host application supplies
 its own session-grant callback. This lets Mornye and older host versions
 return to the application that started verification. Package-only fixes keep
