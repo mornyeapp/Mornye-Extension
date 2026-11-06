@@ -264,6 +264,29 @@
       "downloads": 0,
       "updated_at": "2026-11-01T00:00:00Z",
       "min_app_version": "5.3.0"
+    },
+    {
+      "id": "jellyfin",
+      "name": "jellyfin",
+      "display_name": "Jellyfin",
+      "version": "1.1.1",
+      "description": "Use your own Jellyfin server as a search provider, download source, lyrics source and home feed.",
+      "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/jellyfin.sflx",
+      "sha256": "9e039387b730a6a613753525bf025dd824713a04d08a48ea35b7fbc6438927b6",
+      "icon_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/icons/jellyfin.png",
+      "category": "download",
+      "tags": [
+        "jellyfin",
+        "self-hosted",
+        "download",
+        "metadata",
+        "search",
+        "lyrics",
+        "homefeed"
+      ],
+      "downloads": 0,
+      "updated_at": "2026-11-06T00:00:00Z",
+      "min_app_version": "5.3.0"
     }
   ]
 }
