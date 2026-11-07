@@ -1191,7 +1191,7 @@ function isDeterministicDownloadError(error) {
   var code = String(error && error.code || "").toUpperCase();
   // Only catalog/quality absence confirms that a lower tier is worth trying.
   // Other terminal codes (auth, invalid tickets, etc.) must not downgrade audio.
-  if (code) return /^(TRACK_NOT_FOUND|TRACK_UNAVAILABLE|TRACK_NOT_AVAILABLE|QUALITY_UNAVAILABLE|QUALITY_NOT_AVAILABLE|CODEC_UNAVAILABLE)$/.test(code);
+  if (code) return /^(TRACK_NOT_FOUND|TRACK_UNAVAILABLE|TRACK_NOT_AVAILABLE|QUALITY_UNAVAILABLE|QUALITY_NOT_AVAILABLE|CODEC_UNAVAILABLE|ATMOS_UNAVAILABLE)$/.test(code);
   var message = String(error && error.message || error || "").trim();
   return /^(?:requested )?(?:track|quality|codec)(?: is)? (?:not available|unavailable|not found)(?:[.!]|$)/i.test(message) ||
     message === "TIDAL API did not report EAC3_JOC for this track" ||
@@ -2694,8 +2694,10 @@ function download(trackID, quality, outputPath, onProgress, options) {
     var qualityInfo = null;
     var validation = { valid: true, preview: false, message: "" };
     var rejectedCandidates = {};
+    var maxTransfers = CONFIG.preferMirrors ? 3 : 2;
+    var refreshedExpiredStream = false;
 
-    for (var attempt = 0; attempt < 2; attempt++) {
+    for (var attempt = 0; attempt < maxTransfers; attempt++) {
       downloadInfo = fetchDownloadInfo(trackID, downloadQuality, rejectedCandidates);
       actualOutputPath = ensureOutputExtension(
         outputPath,
@@ -2715,14 +2717,25 @@ function download(trackID, quality, outputPath, onProgress, options) {
         deleteQuietly(actualOutputPath);
         var errorMessage = downloadResult && downloadResult.error ? downloadResult.error : "TIDAL download failed";
         var transferErrorType = downloadResult && downloadResult.error_type ? String(downloadResult.error_type) : "download_error";
-        if (transferErrorType === "expired_stream" && attempt === 0) {
+        var cancelled = transferErrorType === "cancelled" || /cancelled/i.test(errorMessage) ||
+          (utils && typeof utils.isDownloadCancelled === "function" && utils.isDownloadCancelled());
+        if (!cancelled && downloadInfo.mirrorBaseURL && CONFIG.preferMirrors && attempt + 1 < maxTransfers) {
+          var rejectedQualities = buildFallbackQualities(downloadQuality);
+          for (var q = 0; q < rejectedQualities.length; q++) {
+            rejectedCandidates[sourceCandidateKey("mirror", downloadInfo.mirrorBaseURL, rejectedQualities[q])] = true;
+          }
+          log.warn("[TidalWeb] Custom stream failed, trying the default download API");
+          continue;
+        }
+        if (!cancelled && transferErrorType === "expired_stream" && !refreshedExpiredStream && attempt + 1 < maxTransfers) {
+          refreshedExpiredStream = true;
           log.warn("[TidalWeb] Stream URL expired, resolving a fresh URL once");
           continue;
         }
         return {
           success: false,
           error_message: errorMessage,
-          error_type: errorMessage === "download cancelled" ? "cancelled" : transferErrorType,
+          error_type: cancelled ? "cancelled" : transferErrorType,
           retry_after_seconds: Number(downloadResult && downloadResult.retry_after_seconds || 0)
         };
       }
@@ -2736,7 +2749,7 @@ function download(trackID, quality, outputPath, onProgress, options) {
         break;
       }
       deleteQuietly(actualOutputPath);
-      if (!validation.preview || attempt === 1) {
+      if (!validation.preview || attempt + 1 === maxTransfers) {
         return {
           success: false,
           error_message: validation.message,

@@ -94,3 +94,71 @@ test('qobuz-web falls back to the default provider and drops the custom one when
   assert.equal(app.context.resolveDownloadInfo('1', 'LOSSLESS').provider, 'zarz-v2');
   assert.equal(app.gets.length, 1);
 });
+
+function transferRuntime(name, failedTransfer) {
+  const app = load(name, {
+    get: () => name === 'tidal-web' ? tidalFlac('LOSSLESS') : ok({ url: 'https://offline.invalid/audio.flac' }),
+    signedFetch: () => name === 'tidal-web' ? tidalFlac('LOSSLESS') : ok({ url: 'https://offline.invalid/default.flac' }),
+  });
+  app.context.initialize({ customEndpoint: 'https://custom.example.test' });
+  const transfers = [], deleted = [];
+  app.context.file = {
+    exists() { return true; },
+    delete(path) { deleted.push(path); },
+    download(url, output) {
+      transfers.push(url);
+      return transfers.length === 1 ? failedTransfer : { success: true, path: output };
+    },
+  };
+  app.context.gobackend = { getAudioQuality: () => ({ duration: 180, bitDepth: 16, sampleRate: 44100 }) };
+  const track = { name: 'Signal', artists: 'Artist', duration_ms: 180000 };
+  const preparedContext = name === 'tidal-web'
+    ? { track_id: '123', raw_track: { id: '123', audioQuality: 'LOSSLESS' }, formatted_track: track }
+    : { host_track: track };
+  return { ...app, transfers, deleted,
+    download: () => app.context.download('123', 'LOSSLESS', '/output/song.flac', () => {}, { preparedContext }),
+  };
+}
+
+for (const name of ['tidal-web', 'qobuz-web']) {
+  for (const error of ['HTTP 403', 'connection reset']) {
+    test(`${name} uses the default provider after a custom stream fails: ${error}`, () => {
+      const app = transferRuntime(name, { success: false, error });
+      const result = app.download();
+      assert.equal(result.success, true, result.error_message);
+      assert.equal(app.transfers.length, 2);
+      assert.equal(app.gets.length, 1, 'do not retry the failed custom endpoint at another tier');
+      assert.equal(app.signed().length, 1);
+      assert.ok(app.deleted.includes('/output/song.flac'));
+    });
+  }
+
+  test(`${name} does not fall back after cancellation`, () => {
+    const app = transferRuntime(name, { success: false, error: 'download cancelled', error_type: 'cancelled' });
+    assert.equal(app.download().success, false);
+    assert.equal(app.transfers.length, 1);
+    assert.equal(app.signed().length, 0);
+  });
+
+  test(`${name} reports an unsuccessful default transfer instead of succeeding`, () => {
+    const app = transferRuntime(name, { success: false, error: 'HTTP 403' });
+    app.context.file.download = () => ({ success: false, error: 'HTTP 503' });
+    assert.equal(app.download().success, false);
+    assert.equal(app.gets.length, 1);
+    assert.equal(app.signed().length, 1);
+  });
+}
+
+test('tidal-web can refresh an expired default stream after rejecting the custom one', () => {
+  const app = transferRuntime('tidal-web', { success: false, error: 'HTTP 403' });
+  app.context.file.download = (url, output) => {
+    app.transfers.push(url);
+    if (app.transfers.length === 1) return { success: false, error: 'HTTP 403' };
+    if (app.transfers.length === 2) return { success: false, error: 'expired', error_type: 'expired_stream' };
+    return { success: true, path: output };
+  };
+  assert.equal(app.download().success, true);
+  assert.equal(app.gets.length, 1);
+  assert.equal(app.signed().length, 2);
+  assert.equal(app.transfers.length, 3);
+});

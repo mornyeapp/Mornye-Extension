@@ -3086,10 +3086,21 @@ function download(trackID, quality, outputPath, onProgress, options) {
       var downloadResult = downloadDirectFile(downloadInfo.directURL, actualOutputPath, onProgress, 10, 82);
       if (!downloadResult || !downloadResult.success) {
         deleteQuietly(actualOutputPath);
+        var transferError = downloadResult && downloadResult.error ? String(downloadResult.error) : "unknown error";
+        var cancelled = (downloadResult && downloadResult.error_type === "cancelled") ||
+          /cancelled/i.test(transferError) || ensureNotCancelled();
+        if (!cancelled && downloadInfo.provider === "custom" && attempt + 1 < maxDownloadAttempts) {
+          var rejectedQualities = qualityFallbackChain(quality);
+          for (var q = 0; q < rejectedQualities.length; q++) {
+            rejectedDownloadCandidates["custom@" + rejectedQualities[q]] = true;
+          }
+          log.warn("[QobuzWeb] Custom stream failed, trying the default download provider");
+          continue;
+        }
         return {
           success: false,
-          error_message: "Failed to download Qobuz stream: " + (downloadResult && downloadResult.error ? downloadResult.error : "unknown error"),
-          error_type: "download_error"
+          error_message: "Failed to download Qobuz stream: " + transferError,
+          error_type: cancelled ? "cancelled" : "download_error"
         };
       }
 
