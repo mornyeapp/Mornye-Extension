@@ -1,23 +1,23 @@
-name: Amazon Atmos metadata and package checks
+name: Extension source and package checks
 
 on:
   push:
     branches:
       - main
     paths:
-      - 'sources/amazon/**'
-      - 'extensions/amzn.sflx'
-      - 'tests/amazon*.test.cjs'
-      - 'scripts/build_packages.py'
-      - 'registry.json'
+      - 'sources/**'
+      - 'extensions/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'registry*.json'
       - '.github/workflows/amazon-atmos-ci.yml'
   pull_request:
     paths:
-      - 'sources/amazon/**'
-      - 'extensions/amzn.sflx'
-      - 'tests/amazon*.test.cjs'
-      - 'scripts/build_packages.py'
-      - 'registry.json'
+      - 'sources/**'
+      - 'extensions/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'registry*.json'
       - '.github/workflows/amazon-atmos-ci.yml'
 
 permissions:
@@ -32,7 +32,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Amazon metadata and signed media regressions
-        run: node --test tests/amazon*.test.cjs
+      - name: Provider regressions
+        run: node --test tests/*.test.cjs
       - name: Validate source-backed package bytes and registry hashes
-        run: python3 scripts/build_packages.py --check amazon
+        run: python3 scripts/build_packages.py --check
+      - name: Validate every registry and packaged Python module
+        run: python3 -m unittest discover -s tests -p 'test_*.py'

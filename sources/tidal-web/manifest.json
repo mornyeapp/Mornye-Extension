@@ -1,7 +1,7 @@
 {
   "name": "tidal-web",
   "displayName": "Tidal",
-  "version": "1.2.13",
+  "version": "1.2.14",
   "description": "TIDAL metadata and search provider for Mornye using TIDAL public web endpoints.",
   "homepage": "https://github.com/zarzet/SpotiFLAC-Mobile",
   "type": [
@@ -184,6 +184,13 @@
       "type": "string",
       "default": "https://api.zarz.moe/v1/dl/tid2",
       "description": "Primary TIDAL download API used for strict quality selection and Dolby-to-FLAC fallback."
+    },
+    {
+      "key": "customEndpoint",
+      "label": "Custom download endpoint",
+      "type": "string",
+      "grantsNetwork": true,
+      "description": "Optional. Base URL of your own hifi-api compatible server (https://github.com/binimum/hifi-api), e.g. http://192.168.1.10:8000. It is tried before the default download API. A server on your home network also needs Allow Local Network Access turned on in the download settings."
     }
   ]
 }
