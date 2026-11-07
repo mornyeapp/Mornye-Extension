@@ -23,8 +23,12 @@ var CONFIG = {
   retryMaxDelayMs: 4000,
   downloadProviders: [
     { name: "zarz-v2", url: "/dl/qbz" }
-  ]
+  ],
+  customEndpoint: "",
+  customEndpointApiKey: ""
 };
+
+var DEFAULT_DOWNLOAD_PROVIDERS = CONFIG.downloadProviders.slice();
 
 var STORE_TRACK_ID_REGEX = /\/v4\/ajax\/popin-add-cart\/track\/([0-9]+)/g;
 var LOCALE_SEGMENT_REGEX = /^[a-z]{2}-[a-z]{2}$/i;
@@ -411,7 +415,52 @@ function initialize(settings) {
     CONFIG.countryCode = countryCode;
   }
 
+  // A user-hosted qobuz-rest-api compatible server is tried before the default API.
+  CONFIG.customEndpoint = normalizeCustomEndpoint(settings.customEndpoint);
+  CONFIG.customEndpointApiKey = String(settings.customEndpointApiKey || "").trim();
+  CONFIG.downloadProviders = (CONFIG.customEndpoint ? [{ name: "custom", custom: true }] : [])
+    .concat(DEFAULT_DOWNLOAD_PROVIDERS);
+
   return true;
+}
+
+// Keeps the scheme the user typed: the host app allows plain HTTP only for a
+// host granted by a "grantsNetwork" setting.
+function normalizeCustomEndpoint(value) {
+  var text = String(value || "").trim();
+  if (!/^https?:\/\/[^\/?#]+/i.test(text)) return "";
+  return text.replace(/[?#].*$/, "").replace(/\/+$/, "");
+}
+
+function mapCustomEndpointQuality(qualityCode) {
+  switch (String(qualityCode || "").trim()) {
+    case "27":
+      return "hi96";
+    case "7":
+      return "hi24";
+    default:
+      return "flac";
+  }
+}
+
+// GET {endpoint}/download-url/{trackID}?quality=... as served by qobuz-rest-api.
+function fetchCustomDownloadInfo(provider, trackID, qualityCode) {
+  var url = CONFIG.customEndpoint + "/download-url/" + encodeURIComponent(String(trackID || "").trim()) +
+    "?quality=" + encodeURIComponent(mapCustomEndpointQuality(qualityCode));
+  var headers = requestHeaders(url);
+  if (CONFIG.customEndpointApiKey) headers["X-API-Key"] = CONFIG.customEndpointApiKey;
+  var response = http.get(url, headers);
+  if (!response || response.error) {
+    throw new Error("custom endpoint: " + (response && response.error ? response.error : "request failed"));
+  }
+  if (response.statusCode !== 200) {
+    throw new Error("custom endpoint: HTTP " + response.statusCode + summarizeErrorBody(response.body));
+  }
+  var info = parseDownloadInfo(JSON.parse(response.body));
+  info.provider = provider.name;
+  info.qualityCode = qualityCode;
+  info.candidateKey = provider.name + "@" + qualityCode;
+  return info;
 }
 
 function cleanup() {
@@ -2706,6 +2755,7 @@ function providerRequestURL(provider, trackID, qualityCode) {
 }
 
 function fetchProviderDownloadInfo(provider, trackID, qualityCode) {
+  if (provider && provider.custom) return fetchCustomDownloadInfo(provider, trackID, qualityCode);
   var attempts = CONFIG.maxDownloadAttempts;
   var lastError = null;
   var trackURL = CONFIG.openBaseURL + "/track/" + String(trackID || "").trim();

@@ -46,6 +46,16 @@ install Python packages and would show it in the extension store. Point
 `MORNYE_REGISTRIES` at the raw URL of `registry-python.json` to use it. The
 package is not built by `scripts/build_packages.py`.
 
+`tidal-web` and `qobuz-web` have an optional **Custom download endpoint**
+setting. It is tried before the default download API, and the default API is
+still used if it fails. `tidal-web` expects a server compatible with
+[hifi-api](https://github.com/binimum/hifi-api) (`/track/?id=…&quality=…`).
+`qobuz-web` expects one compatible with
+[qobuz-rest-api](https://github.com/BartolomeoRusso9/qobuz-rest-api)
+(`/download-url/{id}?quality=…`, with an optional `X-API-Key`). The setting
+uses `"grantsNetwork": true`, so the app allows the host typed in it; a server
+on a home network also needs Allow Local Network Access.
+
 Signed-session providers omit `callbackUrl` so the host application supplies
 its own session-grant callback. This lets Mornye and older host versions
 return to the application that started verification. Package-only fixes keep
