@@ -40,10 +40,11 @@ remain package-only until their source is added to this layout.
 
 `utilities.sflx` is for the Python version of Mornye (Mornye-Python) only. It
 uses the Python runtime and provides the Spotify/Tidal metadata, browser solver,
-and signed-session modules that Mornye-Python loads at startup. It is listed in
-`registry-python.json`, not `registry.json`, because the Mornye app cannot
-install Python packages and would show it in the extension store. Point
-`MORNYE_REGISTRIES` at the raw URL of `registry-python.json` to use it. The
+and signed-session modules that Mornye-Python loads at startup. Its
+`registry.json` entry sets `"runtime": "python"`, so the Mornye app hides it
+from the extension store and refuses to install it. Entries without `runtime`
+are JavaScript extensions. `registry-python.json` still lists it for
+Mornye-Python setups whose `MORNYE_REGISTRIES` points at that file. The
 package is not built by `scripts/build_packages.py`.
 
 Signed-session providers omit `callbackUrl` so the host application supplies
