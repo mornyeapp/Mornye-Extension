@@ -7,6 +7,7 @@ var CONFIG = {
   locale: "en_US",
   deviceType: "BROWSER",
   mirrorBaseURLs: [],
+  preferMirrors: false,
   maxAlbumItems: 1000,
   maxPlaylistTracks: 500,
   pageSize: 50,
@@ -62,6 +63,11 @@ function initialize(settings) {
     CONFIG.downloadAPIURL = downloadAPIURL;
   }
 
+  // A user-hosted hifi-api compatible server is tried before the default API.
+  var customEndpoint = normalizeCustomEndpoint(settings.customEndpoint);
+  CONFIG.mirrorBaseURLs = customEndpoint ? [customEndpoint] : [];
+  CONFIG.preferMirrors = !!customEndpoint;
+
   var countryCode = String(settings.countryCode || "").trim().toUpperCase();
   if (countryCode) {
     CONFIG.countryCode = countryCode;
@@ -99,6 +105,14 @@ function parseMirrorBaseURLs(value) {
     results.push(normalized);
   }
   return results;
+}
+
+// Keeps the scheme the user typed: the host app allows plain HTTP only for a
+// host granted by a "grantsNetwork" setting.
+function normalizeCustomEndpoint(value) {
+  var text = String(value || "").trim();
+  if (!/^https?:\/\/[^\/?#]+/i.test(text)) return "";
+  return text.replace(/[?#].*$/, "").replace(/\/+$/, "");
 }
 
 function normalizeMirrorBaseURL(value) {
@@ -1087,7 +1101,7 @@ function fetchAPIDownloadInfo(trackID, quality, ticketID) {
 }
 
 function mirrorRequestURL(baseURL, trackID, quality) {
-  return normalizeMirrorBaseURL(baseURL) +
+  return String(baseURL || "").replace(/\/+$/, "") +
     "/track/?id=" + encodeURIComponent(String(trackID || "")) +
     "&quality=" + encodeURIComponent(normalizeDownloadQuality(quality));
 }
@@ -1102,7 +1116,7 @@ function fetchMirrorDownloadInfo(trackID, quality, rejectedCandidates) {
   rejectedCandidates = rejectedCandidates || {};
 
   for (var i = 0; i < mirrors.length; i++) {
-    var baseURL = normalizeMirrorBaseURL(mirrors[i]);
+    var baseURL = String(mirrors[i] || "").replace(/\/+$/, "");
     if (!baseURL) continue;
     var candidateKey = sourceCandidateKey("mirror", baseURL, quality);
     if (rejectedCandidates[candidateKey]) {
@@ -1177,11 +1191,29 @@ function isDeterministicDownloadError(error) {
   var code = String(error && error.code || "").toUpperCase();
   // Only catalog/quality absence confirms that a lower tier is worth trying.
   // Other terminal codes (auth, invalid tickets, etc.) must not downgrade audio.
-  if (code) return /^(TRACK_NOT_FOUND|TRACK_UNAVAILABLE|TRACK_NOT_AVAILABLE|QUALITY_UNAVAILABLE|QUALITY_NOT_AVAILABLE|CODEC_UNAVAILABLE)$/.test(code);
+  if (code) return /^(TRACK_NOT_FOUND|TRACK_UNAVAILABLE|TRACK_NOT_AVAILABLE|QUALITY_UNAVAILABLE|QUALITY_NOT_AVAILABLE|CODEC_UNAVAILABLE|ATMOS_UNAVAILABLE)$/.test(code);
   var message = String(error && error.message || error || "").trim();
   return /^(?:requested )?(?:track|quality|codec)(?: is)? (?:not available|unavailable|not found)(?:[.!]|$)/i.test(message) ||
     message === "TIDAL API did not report EAC3_JOC for this track" ||
     /^(?:Download API|mirror) returned PREVIEW asset$/.test(message);
+}
+
+function tryMirrorDownloadInfo(trackID, quality, candidate, attempt, rejectedCandidates, qualityErrors) {
+  try {
+    var mirrorDownloadInfo = fetchMirrorDownloadInfo(trackID, candidate, rejectedCandidates);
+    if (satisfiesQuality(mirrorDownloadInfo, candidate)) {
+      mirrorDownloadInfo.resolvedQuality = candidate === "HI_RES_LOSSLESS" && !isHiResInfo(mirrorDownloadInfo)
+        ? "LOSSLESS" : candidate;
+      mirrorDownloadInfo.requestedQuality = normalizeDownloadQuality(quality);
+      return mirrorDownloadInfo;
+    }
+    qualityErrors.push(candidate + " mirror attempt " + (attempt + 1) + ": returned lower tier than requested");
+  } catch (mirrorError) {
+    // Mirror failures may be transient (separate hosts), so they do not
+    // mark the attempt deterministic on their own.
+    qualityErrors.push(candidate + " mirror attempt " + (attempt + 1) + ": " + (mirrorError && mirrorError.message ? mirrorError.message : String(mirrorError)));
+  }
+  return null;
 }
 
 function fetchDownloadInfo(trackID, quality, rejectedCandidates) {
@@ -1210,6 +1242,10 @@ function fetchDownloadInfo(trackID, quality, rejectedCandidates) {
       // Atmos, preview-only, ...). Retrying it just wastes round-trips.
       var deterministic = false;
       var retryAfterMs = 0;
+      if (CONFIG.preferMirrors && candidate !== "DOLBY_ATMOS") {
+        var preferredDownloadInfo = tryMirrorDownloadInfo(trackID, quality, candidate, attempt, rejectedCandidates, qualityErrors);
+        if (preferredDownloadInfo) return preferredDownloadInfo;
+      }
       if (!apiExhausted) {
         try {
           if (!apiTicketID) apiTicketID = signedTicket("tid", "track", trackID);
@@ -1249,21 +1285,9 @@ function fetchDownloadInfo(trackID, quality, rejectedCandidates) {
         }
       }
 
-      if (candidate !== "DOLBY_ATMOS") {
-        try {
-          var mirrorDownloadInfo = fetchMirrorDownloadInfo(trackID, candidate, rejectedCandidates);
-          if (satisfiesQuality(mirrorDownloadInfo, candidate)) {
-            mirrorDownloadInfo.resolvedQuality = candidate === "HI_RES_LOSSLESS" && !isHiResInfo(mirrorDownloadInfo)
-              ? "LOSSLESS" : candidate;
-            mirrorDownloadInfo.requestedQuality = normalizeDownloadQuality(quality);
-            return mirrorDownloadInfo;
-          }
-          qualityErrors.push(candidate + " mirror attempt " + (attempt + 1) + ": returned lower tier than requested");
-        } catch (mirrorError) {
-          // Mirror failures may be transient (separate hosts), so they do not
-          // mark the attempt deterministic on their own.
-          qualityErrors.push(candidate + " mirror attempt " + (attempt + 1) + ": " + (mirrorError && mirrorError.message ? mirrorError.message : String(mirrorError)));
-        }
+      if (!CONFIG.preferMirrors && candidate !== "DOLBY_ATMOS") {
+        var mirrorDownloadInfo = tryMirrorDownloadInfo(trackID, quality, candidate, attempt, rejectedCandidates, qualityErrors);
+        if (mirrorDownloadInfo) return mirrorDownloadInfo;
       }
 
       // A deterministic API result will not change on retry, and with no mirror
@@ -2670,8 +2694,10 @@ function download(trackID, quality, outputPath, onProgress, options) {
     var qualityInfo = null;
     var validation = { valid: true, preview: false, message: "" };
     var rejectedCandidates = {};
+    var maxTransfers = CONFIG.preferMirrors ? 3 : 2;
+    var refreshedExpiredStream = false;
 
-    for (var attempt = 0; attempt < 2; attempt++) {
+    for (var attempt = 0; attempt < maxTransfers; attempt++) {
       downloadInfo = fetchDownloadInfo(trackID, downloadQuality, rejectedCandidates);
       actualOutputPath = ensureOutputExtension(
         outputPath,
@@ -2691,14 +2717,25 @@ function download(trackID, quality, outputPath, onProgress, options) {
         deleteQuietly(actualOutputPath);
         var errorMessage = downloadResult && downloadResult.error ? downloadResult.error : "TIDAL download failed";
         var transferErrorType = downloadResult && downloadResult.error_type ? String(downloadResult.error_type) : "download_error";
-        if (transferErrorType === "expired_stream" && attempt === 0) {
+        var cancelled = transferErrorType === "cancelled" || /cancelled/i.test(errorMessage) ||
+          (utils && typeof utils.isDownloadCancelled === "function" && utils.isDownloadCancelled());
+        if (!cancelled && downloadInfo.mirrorBaseURL && CONFIG.preferMirrors && attempt + 1 < maxTransfers) {
+          var rejectedQualities = buildFallbackQualities(downloadQuality);
+          for (var q = 0; q < rejectedQualities.length; q++) {
+            rejectedCandidates[sourceCandidateKey("mirror", downloadInfo.mirrorBaseURL, rejectedQualities[q])] = true;
+          }
+          log.warn("[TidalWeb] Custom stream failed, trying the default download API");
+          continue;
+        }
+        if (!cancelled && transferErrorType === "expired_stream" && !refreshedExpiredStream && attempt + 1 < maxTransfers) {
+          refreshedExpiredStream = true;
           log.warn("[TidalWeb] Stream URL expired, resolving a fresh URL once");
           continue;
         }
         return {
           success: false,
           error_message: errorMessage,
-          error_type: errorMessage === "download cancelled" ? "cancelled" : transferErrorType,
+          error_type: cancelled ? "cancelled" : transferErrorType,
           retry_after_seconds: Number(downloadResult && downloadResult.retry_after_seconds || 0)
         };
       }
@@ -2712,7 +2749,7 @@ function download(trackID, quality, outputPath, onProgress, options) {
         break;
       }
       deleteQuietly(actualOutputPath);
-      if (!validation.preview || attempt === 1) {
+      if (!validation.preview || attempt + 1 === maxTransfers) {
         return {
           success: false,
           error_message: validation.message,
