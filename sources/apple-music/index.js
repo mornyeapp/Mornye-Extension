@@ -1368,8 +1368,25 @@ function getConcert(id) {
   return detail ? cacheSet(key, detail, METADATA_CACHE_TTL_MS) : null;
 }
 
+// Apple returns an artist's albums in no useful order. Newest first, releases without a date
+// last, ties in the order Apple sent them. Only the albums of one page can be ordered here; a
+// catalog that spans several pages is ordered page by page.
+function sortAlbumsNewestFirst(items) {
+  return items.map(function (album, index) {
+    var date = String(album && album.attributes && album.attributes.releaseDate || "");
+    return { album: album, index: index, date: date };
+  }).sort(function (a, b) {
+    if (a.date !== b.date) {
+      if (!a.date) return 1;
+      if (!b.date) return -1;
+      return a.date < b.date ? 1 : -1;
+    }
+    return a.index - b.index;
+  }).map(function (entry) { return entry.album; });
+}
+
 function formatArtistAlbums(items, artistID, artistAttributes) {
-  return items.map(function (album) {
+  return sortAlbumsNewestFirst(items).map(function (album) {
     var attr = album.attributes || {};
     return {
       id: album.id || "",
@@ -2639,6 +2656,17 @@ function ttmlToLyricsResult(parsed) {
 
   if (lines.length === 0) return null;
 
+  // Apple serves only plain text for some tracks (itunes:timing="None"), sometimes with every
+  // line stamped 0. Reporting that as LINE_SYNCED made every line "[00:00.00]". Several lines
+  // that all start at the same moment carry no timing, so they are reported as UNSYNCED.
+  var hasRealTiming = String(parsed.timingMode || "").toLowerCase() !== "none";
+  if (hasRealTiming && lines.length > 1) {
+    hasRealTiming = false;
+    for (var ti = 1; ti < lines.length; ti++) {
+      if (lines[ti].startTimeMs !== lines[0].startTimeMs) { hasRealTiming = true; break; }
+    }
+  }
+
   // Append translation lines after main lyrics (with blank separator)
   if (hasTranslation && translationLines.length > 0) {
     // Add separator
@@ -2658,7 +2686,7 @@ function ttmlToLyricsResult(parsed) {
 
   return {
     lines: lines,
-    syncType: "LINE_SYNCED",
+    syncType: hasRealTiming ? "LINE_SYNCED" : "UNSYNCED",
     instrumental: false,
     plainLyrics: plainParts.join("\n"),
     provider: "Apple Music"

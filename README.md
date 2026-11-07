@@ -19,7 +19,7 @@
 ## Developing the bundled providers
 
 Spotify, Amazon, Apple Music, YouTube Music, SoundCloud, Tidal, Qobuz, Deezer, JioSaavn, Bugs Music,
-Melon, Genie, and Beatport have reviewable source in `sources/<provider>/` and
+Melon, Genie, Beatport, and Jellyfin have reviewable source in `sources/<provider>/` and
 offline regression tests in `tests/`. Edit the source, bump its manifest
 version, and run:
 
@@ -40,8 +40,11 @@ remain package-only until their source is added to this layout.
 
 `utilities.sflx` is for the Python version of Mornye (Mornye-Python) only. It
 uses the Python runtime and provides the Spotify/Tidal metadata, browser solver,
-and signed-session modules that Mornye-Python loads at startup. It is
-package-only and is not built by `scripts/build_packages.py`.
+and signed-session modules that Mornye-Python loads at startup. It is listed in
+`registry-python.json`, not `registry.json`, because the Mornye app cannot
+install Python packages and would show it in the extension store. Point
+`MORNYE_REGISTRIES` at the raw URL of `registry-python.json` to use it. The
+package is not built by `scripts/build_packages.py`.
 
 Signed-session providers omit `callbackUrl` so the host application supplies
 its own session-grant callback. This lets Mornye and older host versions

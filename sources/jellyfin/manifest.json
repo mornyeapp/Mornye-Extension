@@ -1,0 +1,104 @@
+{
+  "name": "jellyfin",
+  "displayName": "Jellyfin",
+  "version": "1.1.1",
+  "description": "Use your own Jellyfin server as a search provider, download source, lyrics source and home feed.",
+  "author": "Raphael Schneider",
+  "permissions": {
+    "network": [
+      "*"
+    ],
+    "storage": true,
+    "file": true,
+    "allowHttp": true
+  },
+  "type": [
+    "metadata_provider",
+    "download_provider",
+    "lyrics_provider"
+  ],
+  "skipMetadataEnrichment": true,
+  "skipBuiltInFallback": true,
+  "searchBehavior": {
+    "enabled": true,
+    "placeholder": "Search Jellyfin...",
+    "primary": false,
+    "thumbnailRatio": "square"
+  },
+  "urlHandler": {
+    "enabled": true,
+    "patterns": [
+      "#/details?id=",
+      "#!/details?id="
+    ]
+  },
+  "qualityOptions": [
+    {
+      "id": "ORIGINAL",
+      "label": "Original",
+      "description": "Unchanged file from the server (e.g. FLAC)"
+    },
+    {
+      "id": "MP3_320",
+      "label": "MP3 320 kbps",
+      "description": "Transcoded by the server"
+    },
+    {
+      "id": "MP3_192",
+      "label": "MP3 192 kbps",
+      "description": "Transcoded by the server"
+    },
+    {
+      "id": "OPUS_128",
+      "label": "Opus 128 kbps",
+      "description": "Transcoded by the server"
+    }
+  ],
+  "settings": [
+    {
+      "key": "server_url",
+      "label": "Server URL",
+      "type": "string",
+      "required": true,
+      "description": "e.g. https://jellyfin.example.com (without /web). A server on your home network also needs Allow Local Network Access turned on in the download settings."
+    },
+    {
+      "key": "username",
+      "label": "Username",
+      "type": "string",
+      "required": true
+    },
+    {
+      "key": "password",
+      "label": "Password",
+      "type": "string",
+      "secret": true
+    },
+    {
+      "key": "api_key",
+      "label": "API key (optional)",
+      "type": "string",
+      "secret": true,
+      "description": "Alternative to the password: an API key from the Jellyfin dashboard. The username is then used to pick the user account."
+    },
+    {
+      "key": "test_button",
+      "label": "Test connection",
+      "type": "button",
+      "description": "Checks the server URL and the login",
+      "action": "testConnection"
+    },
+    {
+      "key": "logout_button",
+      "label": "Clear saved session",
+      "type": "button",
+      "description": "Forces a fresh login",
+      "action": "clearSession"
+    }
+  ],
+  "capabilities": {
+    "homeFeed": true
+  },
+  "icon": "icon.png",
+  "minAppVersion": "5.3.0"
+}
