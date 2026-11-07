@@ -40,12 +40,21 @@ remain package-only until their source is added to this layout.
 
 `utilities.sflx` is for the Python version of Mornye (Mornye-Python) only. It
 uses the Python runtime and provides the Spotify/Tidal metadata, browser solver,
-and signed-session modules that Mornye-Python loads at startup. Its
-`registry.json` entry sets `"runtime": "python"`, so the Mornye app hides it
-from the extension store and refuses to install it. Entries without `runtime`
-are JavaScript extensions. `registry-python.json` still lists it for
-Mornye-Python setups whose `MORNYE_REGISTRIES` points at that file. The
-package is not built by `scripts/build_packages.py`.
+and signed-session modules that Mornye-Python loads at startup. It stays in
+`registry-python.json`; `registry.json` stays JavaScript-only so existing app
+versions never offer an incompatible Python package. The Python package is
+not built by `scripts/build_packages.py`.
+
+`registry-unified.json` is an opt-in shared catalog generated from those two
+registries. It marks Python packages with `"runtime": "python"`. Mornye-Python
+can point `MORNYE_REGISTRIES` at its raw URL to use one catalog. Only Mornye app
+versions containing [mornyeapp/Mornye#846](https://github.com/mornyeapp/Mornye/pull/846)
+can safely use it, because they filter unsupported runtimes. Do not switch the
+app's default registry until that support has reached its users.
+
+Package builds also refresh the shared catalog. After manually updating a
+package-only extension and its registry, run `python3 scripts/build_unified_registry.py`.
+CI checks that the generated versions and checksums still match both inputs.
 
 Signed-session providers omit `callbackUrl` so the host application supplies
 its own session-grant callback. This lets Mornye and older host versions
