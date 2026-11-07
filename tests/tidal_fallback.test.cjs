@@ -42,7 +42,7 @@ function load(respond, overrides = {}) {
   };
 }
 
-for (const code of ['QUALITY_UNAVAILABLE', 'TRACK_UNAVAILABLE', 'TRACK_NOT_FOUND']) {
+for (const code of ['QUALITY_UNAVAILABLE', 'TRACK_UNAVAILABLE', 'TRACK_NOT_FOUND', 'ATMOS_UNAVAILABLE']) {
   test(`${code} immediately tries FLAC after unavailable Atmos`, () => {
     const app = load(({ body }) => body.endpoint === 'manifests'
       ? { statusCode: 404, error: 'No matching catalog rendition', code, retryable: false, retryMode: 'none' }
@@ -52,6 +52,16 @@ for (const code of ['QUALITY_UNAVAILABLE', 'TRACK_UNAVAILABLE', 'TRACK_NOT_FOUND
     assert.deepEqual(app.sleeps, []);
   });
 }
+
+test('the Python utilities Atmos 502 response falls back without retrying Atmos', () => {
+  const app = load(({ body }) => body.endpoint === 'manifests'
+    ? { statusCode: 502, status: 502, error: 'Dolby Atmos unavailable (HTTP 502 Bad Gateway)',
+        code: 'ATMOS_UNAVAILABLE', retryable: false, retryMode: 'none' }
+    : flac());
+  assert.equal(app.fetch().resolvedQuality, 'HI_RES_LOSSLESS');
+  assert.deepEqual(app.qualities(), ['DOLBY_ATMOS', 'HI_RES_LOSSLESS']);
+  assert.deepEqual(app.sleeps, []);
+});
 
 test('confirmed missing Atmos and hi-res tries CD FLAC', () => {
   const app = load(({ body }) => body.quality === 'LOSSLESS' ? flac('LOSSLESS')
