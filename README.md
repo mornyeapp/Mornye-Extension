@@ -38,7 +38,7 @@ Pass provider directory names to rebuild a subset, for example
 Commit source, tests, packages, and registry changes together. Other providers
 remain package-only until their source is added to this layout.
 
-`registry.json` is the only catalog to edit. An entry without `runtime` is a
+`registry.json` is the only catalog. An entry without `runtime` is a
 JavaScript extension. `utilities.sflx` is for the Python version of Mornye
 (Mornye-Python) only: it uses the Python runtime and provides the Spotify/Tidal
 metadata, browser solver, and signed-session modules that Mornye-Python loads
@@ -47,11 +47,9 @@ at startup, so its entry sets `"runtime": "python"`. Mornye app versions with
 the store and refuse to install it. The Python package is not built by
 `scripts/build_packages.py`.
 
-`registry-python.json` (Python packages only) and `registry-unified.json` (every
-entry with an explicit `runtime`) are generated from `registry.json` and kept
-only for setups that still point at their URLs. Do not edit them by hand:
-package builds regenerate them, and after editing `registry.json` by hand run
-`python3 scripts/build_unified_registry.py`. CI checks that they match.
+Mornye-Python reads the same `registry.json`. The former `registry-python.json`
+and `registry-unified.json` have been removed; point `MORNYE_REGISTRIES` at
+`registry.json` instead.
 
 `tidal-web` and `qobuz-web` have an optional **Custom download endpoint**
 setting. It is tried before the default download API, and the default API is
