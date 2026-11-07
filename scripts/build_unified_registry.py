@@ -1,4 +1,14 @@
-"""Generate an opt-in shared catalog without changing legacy registries."""
+"""Generate the legacy registry mirrors from registry.json.
+
+registry.json is the only catalog edited by hand. An entry without "runtime"
+(or with "javascript") is a JavaScript extension; a Python package carries
+"runtime": "python", which Mornye app versions with mornyeapp/Mornye#846 hide
+from the store and refuse to install.
+
+registry-python.json (Python packages only) and registry-unified.json (every
+entry with an explicit runtime) are generated copies kept for setups that
+still point at their URLs. Do not edit them by hand.
+"""
 
 import argparse
 import json
@@ -6,38 +16,49 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+RUNTIMES = ("javascript", "python")
 
 
-def combined_registry(root=ROOT):
-    javascript = json.loads((root / "registry.json").read_text())
-    python = json.loads((root / "registry-python.json").read_text())
-    entries = []
+def runtime_of(entry):
+    runtime = entry.get("runtime", "javascript")
+    if runtime not in RUNTIMES:
+        raise ValueError("Unknown runtime for " + entry.get("id", "?") + ": " + str(runtime))
+    return runtime
+
+
+def mirrors(root=ROOT):
+    registry = json.loads((root / "registry.json").read_text())
     seen = set()
-    for registry, runtime in [(javascript, "javascript"), (python, "python")]:
-        for original in registry["extensions"]:
-            entry = dict(original)
-            if entry["id"] in seen:
-                raise ValueError("Duplicate extension id: " + entry["id"])
-            if entry.get("runtime", runtime) != runtime:
-                raise ValueError("Unexpected runtime for " + entry["id"])
-            seen.add(entry["id"])
-            entry["runtime"] = runtime
-            entries.append(entry)
+    unified, python = [], []
+    for entry in registry["extensions"]:
+        if entry["id"] in seen:
+            raise ValueError("Duplicate extension id: " + entry["id"])
+        seen.add(entry["id"])
+        runtime = runtime_of(entry)
+        fields = {key: value for key, value in entry.items() if key != "runtime"}
+        unified.append(dict(fields, runtime=runtime))
+        if runtime == "python":
+            python.append(fields)
+    header = {"version": registry["version"], "updated_at": registry["updated_at"]}
     return {
-        "version": max(javascript["version"], python["version"]),
-        "updated_at": max(javascript["updated_at"], python["updated_at"]),
-        "extensions": entries,
+        "registry-unified.json": dict(header, extensions=unified),
+        "registry-python.json": dict(header, extensions=python),
     }
 
 
 def synchronize(*, check=False, root=ROOT):
-    destination = root / "registry-unified.json"
-    expected = json.dumps(combined_registry(root), indent=2, ensure_ascii=False) + "\n"
-    if destination.exists() and destination.read_text() == expected:
-        return
-    if check:
-        raise ValueError("registry-unified.json is stale; run scripts/build_unified_registry.py")
-    destination.write_text(expected)
+    stale = []
+    for filename, content in mirrors(root).items():
+        destination = root / filename
+        expected = json.dumps(content, indent=2, ensure_ascii=False) + "\n"
+        if destination.exists() and destination.read_text() == expected:
+            continue
+        if check:
+            stale.append(filename)
+        else:
+            destination.write_text(expected)
+    if stale:
+        raise ValueError(", ".join(stale) + " stale; run scripts/build_unified_registry.py")
 
 
 def main():

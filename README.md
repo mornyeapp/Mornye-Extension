@@ -38,23 +38,20 @@ Pass provider directory names to rebuild a subset, for example
 Commit source, tests, packages, and registry changes together. Other providers
 remain package-only until their source is added to this layout.
 
-`utilities.sflx` is for the Python version of Mornye (Mornye-Python) only. It
-uses the Python runtime and provides the Spotify/Tidal metadata, browser solver,
-and signed-session modules that Mornye-Python loads at startup. It stays in
-`registry-python.json`; `registry.json` stays JavaScript-only so existing app
-versions never offer an incompatible Python package. The Python package is
-not built by `scripts/build_packages.py`.
+`registry.json` is the only catalog to edit. An entry without `runtime` is a
+JavaScript extension. `utilities.sflx` is for the Python version of Mornye
+(Mornye-Python) only: it uses the Python runtime and provides the Spotify/Tidal
+metadata, browser solver, and signed-session modules that Mornye-Python loads
+at startup, so its entry sets `"runtime": "python"`. Mornye app versions with
+[mornyeapp/Mornye#846](https://github.com/mornyeapp/Mornye/pull/846) hide it from
+the store and refuse to install it. The Python package is not built by
+`scripts/build_packages.py`.
 
-`registry-unified.json` is an opt-in shared catalog generated from those two
-registries. It marks Python packages with `"runtime": "python"`. Mornye-Python
-can point `MORNYE_REGISTRIES` at its raw URL to use one catalog. Only Mornye app
-versions containing [mornyeapp/Mornye#846](https://github.com/mornyeapp/Mornye/pull/846)
-can safely use it, because they filter unsupported runtimes. Do not switch the
-app's default registry until that support has reached its users.
-
-Package builds also refresh the shared catalog. After manually updating a
-package-only extension and its registry, run `python3 scripts/build_unified_registry.py`.
-CI checks that the generated versions and checksums still match both inputs.
+`registry-python.json` (Python packages only) and `registry-unified.json` (every
+entry with an explicit `runtime`) are generated from `registry.json` and kept
+only for setups that still point at their URLs. Do not edit them by hand:
+package builds regenerate them, and after editing `registry.json` by hand run
+`python3 scripts/build_unified_registry.py`. CI checks that they match.
 
 `tidal-web` and `qobuz-web` have an optional **Custom download endpoint**
 setting. It is tried before the default download API, and the default API is
