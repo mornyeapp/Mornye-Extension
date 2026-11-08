@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-11-07T00:00:00Z",
+  "updated_at": "2026-11-08T00:00:00Z",
   "extensions": [
     {
       "id": "spotify-web",
@@ -26,10 +26,10 @@
       "id": "amazon",
       "name": "amazon",
       "display_name": "Amazon Music",
-      "version": "2.3.16",
+      "version": "2.3.17",
       "description": "Amazon Music metadata and downloads with per-track Dolby Atmos tags when provided by Amazon, complete release metadata, original artwork, lossless audio, and AC-4.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/amzn.sflx",
-      "sha256": "6a8c3a141a0ddf8e872fdacca09b08c880f82357034aa3d9aeba1feb37da5b75",
+      "sha256": "2dd212ae9e914b65b45c492e35f34bd6620461fcf25fbeda06dd771c3e53af77",
       "category": "download",
       "tags": [
         "amazon",
@@ -39,7 +39,7 @@
         "search"
       ],
       "downloads": 0,
-      "updated_at": "2026-11-01T00:00:00Z",
+      "updated_at": "2026-11-08T00:00:00Z",
       "min_app_version": "4.9.1",
       "runtime": "javascript"
     },

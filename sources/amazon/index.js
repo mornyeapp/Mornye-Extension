@@ -3099,11 +3099,14 @@ function resolveAmazonTrackBySearch(trackName, artistName, durationMs) {
   if (!titleKey) return null;
 
   var queries = [String(trackName || "").trim()];
-  if (strippedTitle !== queries[0]) {
-    var artistQuery = (strippedTitle + " " + (artistName || "")).trim();
-    if (queries.indexOf(artistQuery) < 0) queries.push(artistQuery);
-    if (queries.indexOf(strippedTitle) < 0) queries.push(strippedTitle);
-  }
+  // A short or common title alone can return only other artists' songs, so
+  // the title is also searched with the primary artist.
+  var primaryArtist = String(artistName || "")
+    .split(/\s*[,;]\s*|\s+(?:feat\.?|ft\.?|featuring)\s+/i)[0]
+    .trim();
+  var artistQuery = (strippedTitle + " " + primaryArtist).trim();
+  if (queries.indexOf(artistQuery) < 0) queries.push(artistQuery);
+  if (queries.indexOf(strippedTitle) < 0) queries.push(strippedTitle);
   var expectedDuration = Number(durationMs || 0);
   for (var queryIndex = 0; queryIndex < queries.length; queryIndex++) {
     var results = customSearchSync(queries[queryIndex], { filter: "songs" });
