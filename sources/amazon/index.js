@@ -1,5 +1,5 @@
 // Amazon Music Metadata & Download Provider for Mornye
-// v2.3.12 - Regional Home feeds with canonical catalog resolution for downloads.
+// Regional Home feeds with canonical catalog resolution for downloads.
 // Uses reverse-engineered Amazon Music web API (skill.music.a2z.com).
 
 var CONFIG = {
@@ -18,6 +18,10 @@ var CONFIG = {
   deviceModel: "WEBPLAYER",
   musicTerritory: "US"
 };
+
+// Logged so an exported log names the running package. Kept equal to
+// manifest.json by tests/amazon_session.test.cjs.
+var EXTENSION_VERSION = "2.3.19";
 
 var USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
@@ -527,7 +531,17 @@ function initSession(context) {
   _session.initialized = true;
 }
 
-function refreshSession() {
+function refreshSession(withNewCookies) {
+  // Amazon ties a session to its cookies, so a renewal that keeps them gets
+  // the same session back.
+  if (withNewCookies && typeof http !== "undefined" && http &&
+      typeof http.clearCookies === "function") {
+    try {
+      http.clearCookies();
+    } catch (e) {
+      L("warn", "[Amazon] Clearing cookies failed:", String(e));
+    }
+  }
   // Force re-fetch config.json if getting 429s
   _session.initialized = false;
   initSession();
@@ -846,14 +860,16 @@ function _doShowSearch(apiBaseURL, keyword, pageUrl, body, context) {
   }
   if (isServiceErrorDialog(data)) {
     L("warn", "[Amazon] showSearch returned a service error instead of results");
-    return null;
+    return SEARCH_SERVICE_ERROR;
   }
   return data;
 }
 
 // An expired session's search still answers HTTP 200, with a "Service error"
-// dialog in place of the search page. It is handled as a failed request, so
-// the session is renewed instead of every search showing no results.
+// dialog in place of the search page. Such a search gets one retry with a new
+// session instead of showing no results.
+var SEARCH_SERVICE_ERROR = { serviceError: true };
+
 function isServiceErrorDialog(data) {
   var methods = data && data.methods;
   if (!methods || !methods.length) return false;
@@ -886,6 +902,21 @@ function callShowSearch(keyword, context, _retried) {
   });
 
   var result = _doShowSearch(CONFIG.skillBaseURL, keyword, pageUrl, body, ctx);
+  if (result === SEARCH_SERVICE_ERROR) {
+    if (!_retried) {
+      L("info", "[Amazon] showSearch service error, starting a new session and retrying...");
+      refreshSession(true);
+      sleep(CONFIG.baseBackoffMs);
+      return callShowSearch(keyword, ctx, true);
+    }
+    // Refused again with a new session: more attempts only add delay. Some
+    // regions get this for every search while album and artist links work.
+    L("warn", "[Amazon] Search refused for:", keyword);
+    var refused = new Error("amazon_search_refused");
+    refused.code = "search_refused";
+    refused.retryable = false;
+    throw refused;
+  }
   if (result) return result;
 
   if (!_retried) {
@@ -3832,7 +3863,7 @@ registerExtension({
   initialize: function(config) {
     var settings = config && config.settings ? config.settings : (config || {});
     _homeCountry = String(settings.homeCountry || "US").trim().toUpperCase();
-    L("info", "[Amazon] Extension v2.3.12 init");
+    L("info", "[Amazon] Extension v" + EXTENSION_VERSION + " init");
     initSession();
     return true;
   },
@@ -3916,7 +3947,7 @@ registerExtension({
   },
 
   download: function(trackID, quality, outputPath, onProgress, options) {
-    L("info", "[Amazon] download called:", trackID, quality, "extension: 2.3.12");
+    L("info", "[Amazon] download called:", trackID, quality, "extension: " + EXTENSION_VERSION);
 
     // trackID bisa berupa:
     // - ASIN langsung (dari handleUrl/getAlbum flow, atau checkAvailability)

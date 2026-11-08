@@ -18,19 +18,22 @@ const serviceErrorDialog = {
   }],
 };
 
-function runtime({ rejectFirstSearch = false, dialogFirstSearch = false } = {}) {
+function runtime({ rejectFirstSearch = false, dialogFirstSearch = false, dialogSearches = 0 } = {}) {
   const configRequests = [];
   const searchHeaders = [];
+  const events = [];
   const response = { methods: [{ interface: 'SearchTemplate' }] };
   const context = vm.createContext({
     URL, URLSearchParams,
     registerExtension() {},
+    http: { clearCookies() { events.push('clear-cookies'); return true; } },
     log: { info() {}, debug() {}, warn() {}, error() {} },
     utils: { isDownloadCancelled: () => false, sleep: () => true },
     fetch(url, options) {
       const parsed = new URL(url);
       if (parsed.pathname === '/config.json') {
         configRequests.push({ url, options });
+        events.push('config');
         const config = { deviceId: 'fixture-device', sessionId: 'fixture-session' };
         // GET still returns HTTP 200, but Amazon no longer includes a CSRF token.
         if (options.method === 'POST' &&
@@ -42,19 +45,42 @@ function runtime({ rejectFirstSearch = false, dialogFirstSearch = false } = {}) 
       }
       const headers = JSON.parse(JSON.parse(options.body).headers);
       searchHeaders.push(headers);
+      events.push('search');
       if (!JSON.parse(headers['x-amzn-csrf']).token ||
           (rejectFirstSearch && searchHeaders.length === 1)) {
         return { ok: false, status: 403 };
       }
-      if (dialogFirstSearch && searchHeaders.length === 1) {
+      if ((dialogFirstSearch && searchHeaders.length === 1) || searchHeaders.length <= dialogSearches) {
         return { ok: true, status: 200, json: () => serviceErrorDialog };
       }
       return { ok: true, status: 200, json: () => response };
     },
   });
   vm.runInContext(source, context);
-  return { context, configRequests, searchHeaders, response };
+  return { context, configRequests, searchHeaders, events, response };
 }
+
+test('the logged version matches the package manifest', () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '../sources/amazon/manifest.json'), 'utf8'));
+  assert.equal(runtime().context.EXTENSION_VERSION, manifest.version);
+  assert.doesNotMatch(source, /\d+\.\d+\.\d+ init|extension: \d+\.\d+\.\d+/);
+});
+
+test('a service error renews the session with new cookies', () => {
+  const app = runtime({ dialogFirstSearch: true });
+  assert.deepEqual(app.context.callShowSearch('Song'), app.response);
+  assert.deepEqual(app.events, ['config', 'search', 'clear-cookies', 'config', 'search']);
+});
+
+test('a search refused again with a new session fails at once without caching', () => {
+  const app = runtime({ dialogSearches: Infinity });
+  assert.deepEqual([...app.context.customSearchSync('Song', {})], []);
+  assert.deepEqual(app.events, ['config', 'search', 'clear-cookies', 'config', 'search']);
+  // The next search asks Amazon again rather than reusing an empty result.
+  app.events.length = 0;
+  assert.deepEqual([...app.context.customSearchSync('Song', {})], []);
+  assert.deepEqual(app.events, ['search', 'clear-cookies', 'config', 'search']);
+});
 
 test('search obtains CSRF credentials through POST and reuses the session', () => {
   const app = runtime();

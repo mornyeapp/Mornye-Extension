@@ -26,10 +26,10 @@
       "id": "amazon",
       "name": "amazon",
       "display_name": "Amazon Music",
-      "version": "2.3.18",
+      "version": "2.3.19",
       "description": "Amazon Music metadata and downloads with per-track Dolby Atmos tags when provided by Amazon, complete release metadata, original artwork, lossless audio, and AC-4.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/amzn.sflx",
-      "sha256": "8e0d9d5506ae63bda768803c06f7c75d4bf19007af02cd8fbc7d344373361aeb",
+      "sha256": "5177325613ad65b9475aa02e8befb651b68a324d465f04869f2906f5f59044ec",
       "category": "download",
       "tags": [
         "amazon",
