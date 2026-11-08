@@ -837,12 +837,34 @@ function _doShowSearch(apiBaseURL, keyword, pageUrl, body, context) {
   }
   L("info", "[Amazon] showSearch response:", res ? res.status : "null");
   if (!res || !res.ok) return null;
+  var data;
   try {
-    return res.json();
+    data = res.json();
   } catch (e) {
     L("error", "[Amazon] showSearch JSON parse failed:", String(e));
     return null;
   }
+  if (isServiceErrorDialog(data)) {
+    L("warn", "[Amazon] showSearch returned a service error instead of results");
+    return null;
+  }
+  return data;
+}
+
+// An expired session's search still answers HTTP 200, with a "Service error"
+// dialog in place of the search page. It is handled as a failed request, so
+// the session is renewed instead of every search showing no results.
+function isServiceErrorDialog(data) {
+  var methods = data && data.methods;
+  if (!methods || !methods.length) return false;
+  var dialog = false;
+  for (var i = 0; i < methods.length; i++) {
+    var template = methods[i] && methods[i].template;
+    var name = String((template && template.interface) || "");
+    if (/SearchTemplate$/.test(name)) return false;
+    if (/DialogTemplate$/.test(name)) dialog = true;
+  }
+  return dialog;
 }
 
 function callShowSearch(keyword, context, _retried) {

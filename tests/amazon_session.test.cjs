@@ -6,7 +6,19 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync(path.join(__dirname, '../sources/amazon/index.js'), 'utf8');
 
-function runtime({ rejectFirstSearch = false } = {}) {
+// What Amazon sends for a search with expired session credentials.
+const serviceErrorDialog = {
+  methods: [{
+    interface: 'TemplateListInterface.v1_0.CreateAndBindTemplateMethod',
+    template: {
+      interface: 'Web.TemplatesInterface.v1_0.Touch.DialogTemplateInterface.DialogTemplate',
+      header: 'Service error',
+      body: { text: 'Sorry something went wrong.' },
+    },
+  }],
+};
+
+function runtime({ rejectFirstSearch = false, dialogFirstSearch = false } = {}) {
   const configRequests = [];
   const searchHeaders = [];
   const response = { methods: [{ interface: 'SearchTemplate' }] };
@@ -34,6 +46,9 @@ function runtime({ rejectFirstSearch = false } = {}) {
           (rejectFirstSearch && searchHeaders.length === 1)) {
         return { ok: false, status: 403 };
       }
+      if (dialogFirstSearch && searchHeaders.length === 1) {
+        return { ok: true, status: 200, json: () => serviceErrorDialog };
+      }
       return { ok: true, status: 200, json: () => response };
     },
   });
@@ -56,6 +71,26 @@ test('search obtains CSRF credentials through POST and reuses the session', () =
       token: 'token-1', timestamp: '1234567890', rndNonce: '987654321',
     });
   }
+});
+
+test('a service error dialog with HTTP 200 renews the session before its retry', () => {
+  const app = runtime({ dialogFirstSearch: true });
+  assert.deepEqual(app.context.callShowSearch('Song'), app.response);
+  assert.equal(app.configRequests.length, 2);
+  assert.deepEqual(app.searchHeaders.map(headers => JSON.parse(headers['x-amzn-csrf']).token), [
+    'token-1', 'token-2',
+  ]);
+});
+
+test('a search page without results is not taken for a service error', () => {
+  const app = runtime();
+  app.response.methods = [{
+    interface: 'TemplateListInterface.v1_0.BindTemplateMethod',
+    template: { interface: 'Web.TemplatesInterface.v1_0.Touch.SearchTemplateInterface.SearchTemplate' },
+  }];
+  assert.deepEqual(app.context.callShowSearch('Unknown song'), app.response);
+  assert.equal(app.configRequests.length, 1);
+  assert.equal(app.searchHeaders.length, 1);
 });
 
 test('a rejected search refreshes CSRF through POST before its retry', () => {
