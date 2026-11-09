@@ -3409,7 +3409,9 @@ function downloadCandidateTitleParts(value) {
   var text = String(value || "").trim();
   var parts = { title: text, creditedArtist: "" };
   var slash = text.indexOf("/");
-  if (slash > 0 && slash < text.length - 1) {
+  var openingParenthesis = text.indexOf("(");
+  if (slash > 0 && slash < text.length - 1 &&
+      (openingParenthesis < 0 || slash < openingParenthesis)) {
     parts.creditedArtist = text.slice(0, slash).trim();
     parts.title = text.slice(slash + 1).trim();
   }
@@ -3429,17 +3431,28 @@ function downloadTitleWithoutAlbumSuffix(trackName, albumName) {
     }
     offset = title.indexOf(separator, offset + separator.length);
   }
+  if (title.endsWith(")")) {
+    offset = title.indexOf(" (");
+    while (offset >= 0) {
+      var parenthesizedSuffix = title.slice(offset + 2, -1).trim();
+      if (downloadMatchValue(parenthesizedSuffix) === albumKey) {
+        return title.slice(0, offset).trim();
+      }
+      offset = title.indexOf(" (", offset + 2);
+    }
+  }
   return title;
 }
 
-function downloadBilingualEditionTitleMatches(expectedKey, candidateTitle, durationClose) {
+function downloadBilingualEditionTitleMatches(expectedKey, candidateTitle, durationClose, albumName) {
   if (!expectedKey || !durationClose) return false;
   var text = String(candidateTitle || "").trim();
   var separator = text.indexOf(" - ");
   if (separator <= 0 || separator >= text.length - 3) return false;
   var nativeHalf = text.slice(0, separator).trim();
   var translatedHalf = text.slice(separator + 3).trim();
-  if (downloadMatchValue(stripTrackTitleAnnotations(nativeHalf)) !== expectedKey) return false;
+  if (!albumName &&
+      downloadMatchValue(stripTrackTitleAnnotations(nativeHalf)) !== expectedKey) return false;
 
   // YouTube Music sometimes appends a Romanized title after a native title,
   // repeating the edition in both halves, for example:
@@ -3451,13 +3464,22 @@ function downloadBilingualEditionTitleMatches(expectedKey, candidateTitle, durat
   var editionKey = downloadMatchValue(edition[1]);
   var translatedKey = downloadMatchValue(translatedHalf);
   if (!editionKey || (" " + translatedKey + " ").indexOf(" " + editionKey + " ") < 0) return false;
+  var nativeKey = downloadMatchValue(stripTrackTitleAnnotations(
+    downloadTitleWithoutAlbumSuffix(nativeHalf, albumName),
+  ));
+  var translatedTitleKey = downloadMatchValue(stripTrackTitleAnnotations(
+    downloadTitleWithoutAlbumSuffix(translatedHalf, albumName),
+  ));
+  if (albumName && nativeKey !== expectedKey && translatedTitleKey !== expectedKey) return false;
   var nativeScript = downloadTextScript(nativeHalf);
   var translatedScript = downloadTextScript(translatedHalf);
-  return nativeScript.nonLatin && translatedScript.latin;
+  return (nativeScript.nonLatin && translatedScript.latin) ||
+    (albumName && translatedTitleKey === expectedKey);
 }
 
-function downloadRecordingMatches(trackName, artistName, durationMs, candidate) {
-  var titleKey = downloadMatchValue(stripTrackTitleAnnotations(trackName));
+function downloadRecordingMatches(trackName, artistName, durationMs, candidate, albumName) {
+  var expectedTitle = downloadTitleWithoutAlbumSuffix(trackName, albumName);
+  var titleKey = downloadMatchValue(stripTrackTitleAnnotations(expectedTitle));
   var candidateTitle = downloadCandidateTitleParts(candidate.name || candidate.title);
   // Search results produced by parseItemExtended use `artist` and a duration
   // in seconds. Sanitized/API-shaped tracks use `artists` and duration_ms.
@@ -3467,10 +3489,11 @@ function downloadRecordingMatches(trackName, artistName, durationMs, candidate) 
     Number(candidate.duration || 0) * 1000;
   var durationClose = durationMs > 0 && candidateDuration > 0 &&
     Math.abs(durationMs - candidateDuration) <= 10000;
+  var normalizedCandidateTitle = downloadTitleWithoutAlbumSuffix(candidateTitle.title, albumName);
   var titleMatched = titleKey &&
-    titleKey === downloadMatchValue(stripTrackTitleAnnotations(candidateTitle.title));
+    titleKey === downloadMatchValue(stripTrackTitleAnnotations(normalizedCandidateTitle));
   if (!titleMatched &&
-      !downloadBilingualEditionTitleMatches(titleKey, candidateTitle.title, durationClose)) {
+      !downloadBilingualEditionTitleMatches(titleKey, candidateTitle.title, durationClose, albumName)) {
     return false;
   }
   if (artistName) {
@@ -6106,7 +6129,7 @@ registerExtension({
         for (var i = 0; i < results.length; i++) {
           var item = results[i];
           if (item && item.id && (item.item_type === "track" || item.type === "track") &&
-              downloadRecordingMatches(resolvedTrackName, artistName, durationMs, item)) {
+              downloadRecordingMatches(resolvedTrackName, artistName, durationMs, item, albumName)) {
             L("info", "[YTMusic] Found verified track:", item.id, item.name || item.title);
             return { available: true, track_id: item.id };
           }
@@ -6126,7 +6149,7 @@ registerExtension({
         for (var videoIndex = 0; videoIndex < videoResults.length; videoIndex++) {
           var videoItem = videoResults[videoIndex];
           if (videoItem && videoItem.id &&
-              downloadRecordingMatches(resolvedTrackName, artistName, durationMs, videoItem)) {
+              downloadRecordingMatches(resolvedTrackName, artistName, durationMs, videoItem, albumName)) {
             L("info", "[YTMusic] Found verified video track:", videoItem.id, videoItem.name || videoItem.title);
             return { available: true, track_id: videoItem.id };
           }

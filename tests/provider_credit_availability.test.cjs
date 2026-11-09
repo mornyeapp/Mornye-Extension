@@ -181,7 +181,11 @@ test('YouTube Music removes a trailing album title only when queue album metadat
   const albumName = 'LOVEppears / appears [20th Anniversary Edition- (Disc 1)]';
   const matching = runtime('ytmusic-spotiflac', query =>
     query === 'Ayumi Hamasaki Boys & Girls'
-      ? [{ name: 'Boys & Girls', artists: '浜崎あゆみ', duration_ms: 234000 }]
+      ? [{
+          name: 'Boys & Girls (LOVEppears / appears -20th Anniversary Edition-)',
+          artists: '浜崎あゆみ',
+          duration_ms: 234000,
+        }]
       : []);
   assert.equal(matching.extension.checkAvailability('', pollutedTitle, 'Ayumi Hamasaki', {
     duration_ms: 234000,
@@ -198,6 +202,21 @@ test('YouTube Music removes a trailing album title only when queue album metadat
     duration_ms: 234000,
     track: { album_name: 'Different Album' },
   }).available, false);
+});
+
+test('YouTube Music accepts the exact second half of a malformed bilingual edition title', () => {
+  const app = runtime('ytmusic-spotiflac', query =>
+    query === 'Ayumi Hamasaki æternal'
+      ? [{
+          name: '?ternal (A BALLADS 2) - æternal (A BALLADS 2)',
+          artists: 'ayumi hamasaki',
+          duration_ms: 284000,
+        }]
+      : []);
+  assert.equal(app.extension.checkAvailability('', 'æternal - A BALLADS 2', 'Ayumi Hamasaki', {
+    duration_ms: 284000,
+    track: { album_name: 'A BALLADS 2' },
+  }).available, true);
 });
 
 test('YouTube Music retries a native title without a romanized artist and validates the native artist by duration', () => {
