@@ -3416,10 +3416,33 @@ function downloadCandidateTitleParts(value) {
   return parts;
 }
 
+function downloadBilingualEditionTitleMatches(expectedKey, candidateTitle, durationClose) {
+  if (!expectedKey || !durationClose) return false;
+  var text = String(candidateTitle || "").trim();
+  var separator = text.indexOf(" - ");
+  if (separator <= 0 || separator >= text.length - 3) return false;
+  var nativeHalf = text.slice(0, separator).trim();
+  var translatedHalf = text.slice(separator + 3).trim();
+  if (downloadMatchValue(stripTrackTitleAnnotations(nativeHalf)) !== expectedKey) return false;
+
+  // YouTube Music sometimes appends a Romanized title after a native title,
+  // repeating the edition in both halves, for example:
+  // オヒアの木 (A BALLADS 2) - Ohianoki (A BALLADS 2)
+  // Require that repeated qualifier so ordinary Live/Remix/Karaoke suffixes
+  // cannot be discarded as if they were only a translation.
+  var edition = nativeHalf.match(/\(([^()]+)\)\s*$/);
+  if (!edition) return false;
+  var editionKey = downloadMatchValue(edition[1]);
+  var translatedKey = downloadMatchValue(translatedHalf);
+  if (!editionKey || (" " + translatedKey + " ").indexOf(" " + editionKey + " ") < 0) return false;
+  var nativeScript = downloadTextScript(nativeHalf);
+  var translatedScript = downloadTextScript(translatedHalf);
+  return nativeScript.nonLatin && translatedScript.latin;
+}
+
 function downloadRecordingMatches(trackName, artistName, durationMs, candidate) {
   var titleKey = downloadMatchValue(stripTrackTitleAnnotations(trackName));
   var candidateTitle = downloadCandidateTitleParts(candidate.name || candidate.title);
-  if (!titleKey || titleKey !== downloadMatchValue(stripTrackTitleAnnotations(candidateTitle.title))) return false;
   // Search results produced by parseItemExtended use `artist` and a duration
   // in seconds. Sanitized/API-shaped tracks use `artists` and duration_ms.
   // Accept both shapes so availability checks validate the data that the
@@ -3428,6 +3451,12 @@ function downloadRecordingMatches(trackName, artistName, durationMs, candidate) 
     Number(candidate.duration || 0) * 1000;
   var durationClose = durationMs > 0 && candidateDuration > 0 &&
     Math.abs(durationMs - candidateDuration) <= 10000;
+  var titleMatched = titleKey &&
+    titleKey === downloadMatchValue(stripTrackTitleAnnotations(candidateTitle.title));
+  if (!titleMatched &&
+      !downloadBilingualEditionTitleMatches(titleKey, candidateTitle.title, durationClose)) {
+    return false;
+  }
   if (artistName) {
     var candidateArtists = String(candidate.artists || candidate.artist || "");
     var artistText = " " + downloadMatchValue(candidateArtists) + " ";

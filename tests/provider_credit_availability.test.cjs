@@ -141,6 +141,41 @@ test('YouTube Music validates real parser-shaped romanized/native matches', () =
   }
 });
 
+test('YouTube Music accepts a bilingual title only when its edition and duration agree', () => {
+  const matching = runtime('ytmusic-spotiflac', () => [{
+    name: 'オヒアの木 (A BALLADS 2) - Ohianoki (A BALLADS 2)',
+    artists: 'ayumi hamasaki',
+    duration_ms: 280000,
+  }]);
+  assert.equal(matching.extension.checkAvailability(
+    '',
+    'オヒアの木 - A BALLADS 2',
+    'Ayumi Hamasaki',
+    { duration_ms: 280000 },
+  ).available, true);
+
+  for (const candidate of [
+    {
+      name: 'オヒアの木 (A BALLADS 2) - Ohianoki (A BALLADS 2)',
+      artists: 'ayumi hamasaki',
+      duration_ms: 240000,
+    },
+    {
+      name: 'オヒアの木 (A BALLADS 2) - Live',
+      artists: 'ayumi hamasaki',
+      duration_ms: 280000,
+    },
+  ]) {
+    const app = runtime('ytmusic-spotiflac', () => [candidate]);
+    assert.equal(app.extension.checkAvailability(
+      '',
+      'オヒアの木 - A BALLADS 2',
+      'Ayumi Hamasaki',
+      { duration_ms: 280000 },
+    ).available, false);
+  }
+});
+
 test('YouTube Music retries a native title without a romanized artist and validates the native artist by duration', () => {
   const app = runtime('ytmusic-spotiflac', query => {
     if (query === '春よ、来い') {
