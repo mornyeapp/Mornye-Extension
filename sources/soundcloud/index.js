@@ -1,6 +1,6 @@
 // ============================================
 // SoundCloud Extension for Mornye
-// Version: 1.0.13
+// Version: 1.0.15
 //
 // Uses SoundCloud's api-v2 metadata, AAC HLS and legacy progressive streams.
 //
@@ -849,6 +849,13 @@ function enrichTrack(track) {
 // DOWNLOAD PROVIDER
 // ============================================
 
+function isFullPlayableTrack(track) {
+  if (!track || track.streamable === false) return false;
+  if (track.access && track.access !== "playable") return false;
+  if (/^(?:SNIP|BLOCK)$/i.test(String(track.policy || ""))) return false;
+  return true;
+}
+
 function checkAvailability(isrc, trackName, artistName, options) {
   log.info("[SC] checkAvailability:", trackName, "-", artistName);
 
@@ -860,7 +867,7 @@ function checkAvailability(isrc, trackName, artistName, options) {
     // Verify it exists and is playable
     try {
       var track = fetchTrackData(scId);
-      if (track && track.access === "playable" && track.streamable) {
+      if (isFullPlayableTrack(track)) {
         return {
           available: true,
           track_id: String(track.id),
@@ -911,7 +918,7 @@ function checkAvailability(isrc, trackName, artistName, options) {
       var tracks = data.collection || [];
 
       var best = findBestMatch(tracks, trackName, artistName, targetDurationMs, 65, true);
-      if (best && best.access === "playable" && best.streamable !== false) {
+      if (best && isFullPlayableTrack(best)) {
         trackCacheSet(best.id, best);
         return {
           available: true,
@@ -952,7 +959,7 @@ function download(trackID, quality, outputPath, onProgress, options) {
     };
   }
 
-  if (trackData.streamable === false || (trackData.access && trackData.access !== "playable")) {
+  if (!isFullPlayableTrack(trackData)) {
     return {
       success: false,
       error_message: "This SoundCloud track does not offer a full playable stream",
@@ -1080,7 +1087,7 @@ function resolveStreamURL(transcoding, track) {
       // Refresh short-lived track authorization as well as the client ID.
       track = scGet("tracks/" + track.id);
       trackCacheSet(track.id, track);
-      if (track.streamable === false || (track.access && track.access !== "playable")) {
+      if (!isFullPlayableTrack(track)) {
         throw new Error("SoundCloud track is no longer playable");
       }
       continue;

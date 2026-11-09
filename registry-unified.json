@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-11-08T00:00:00Z",
+  "updated_at": "2026-11-09T00:00:00Z",
   "extensions": [
     {
       "id": "spotify-web",
@@ -67,10 +67,10 @@
       "id": "soundcloud",
       "name": "soundcloud",
       "display_name": "SoundCloud",
-      "version": "1.0.14",
+      "version": "1.0.15",
       "description": "SoundCloud metadata and download provider. Search tracks, albums, playlists, artists. Downloads via direct SoundCloud streams.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/soundcloud.sflx",
-      "sha256": "1f0d062fcd604c226655104d494a5efeded60545e4db6c8c0ae10ed66656b72d",
+      "sha256": "ac32056a7f1213d02be3349f1ffb2227accf48d2be58175c1478d1de166cf3ff",
       "category": "download",
       "tags": [
         "soundcloud",
@@ -79,7 +79,7 @@
         "search"
       ],
       "downloads": 0,
-      "updated_at": "2026-11-01T00:00:00Z",
+      "updated_at": "2026-11-09T00:00:00Z",
       "min_app_version": "4.9.1",
       "runtime": "javascript"
     },
