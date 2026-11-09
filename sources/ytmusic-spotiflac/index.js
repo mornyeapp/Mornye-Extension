@@ -3390,18 +3390,63 @@ function downloadMatchValue(value) {
     .replace(/[^a-z0-9\u0080-\uffff]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
+function downloadTextScript(value) {
+  var text = String(value || "");
+  return {
+    latin: /[A-Za-z]/.test(text),
+    nonLatin: /[\u0370-\u052f\u0590-\u08ff\u0900-\u1fff\u2c00-\ud7ff\uf900-\ufaff]/.test(text),
+  };
+}
+
+function downloadArtistsUseDifferentScripts(expected, found) {
+  var left = downloadTextScript(expected);
+  var right = downloadTextScript(found);
+  return (left.latin && right.nonLatin && !right.latin) ||
+    (right.latin && left.nonLatin && !left.latin);
+}
+
+function downloadCandidateTitleParts(value) {
+  var text = String(value || "").trim();
+  var parts = { title: text, creditedArtist: "" };
+  var slash = text.indexOf("/");
+  if (slash > 0 && slash < text.length - 1) {
+    parts.creditedArtist = text.slice(0, slash).trim();
+    parts.title = text.slice(slash + 1).trim();
+  }
+  return parts;
+}
+
 function downloadRecordingMatches(trackName, artistName, durationMs, candidate) {
   var titleKey = downloadMatchValue(stripTrackTitleAnnotations(trackName));
-  if (!titleKey || titleKey !== downloadMatchValue(stripTrackTitleAnnotations(candidate.name || candidate.title))) return false;
+  var candidateTitle = downloadCandidateTitleParts(candidate.name || candidate.title);
+  if (!titleKey || titleKey !== downloadMatchValue(stripTrackTitleAnnotations(candidateTitle.title))) return false;
+  // Search results produced by parseItemExtended use `artist` and a duration
+  // in seconds. Sanitized/API-shaped tracks use `artists` and duration_ms.
+  // Accept both shapes so availability checks validate the data that the
+  // production search parser actually returns.
+  var candidateDuration = Number(candidate.duration_ms || 0) ||
+    Number(candidate.duration || 0) * 1000;
+  var durationClose = durationMs > 0 && candidateDuration > 0 &&
+    Math.abs(durationMs - candidateDuration) <= 10000;
   if (artistName) {
-    var artistText = " " + downloadMatchValue(candidate.artists) + " ";
+    var candidateArtists = String(candidate.artists || candidate.artist || "");
+    var artistText = " " + downloadMatchValue(candidateArtists) + " ";
     var artists = String(artistName).split(/[,;&]|\s+(?:and|feat\.?|ft\.?|featuring|x)\s+/i);
-    if (!artists.some(function(artist) {
+    var artistMatched = artists.some(function(artist) {
       var key = downloadMatchValue(artist);
       return key && artistText.indexOf(" " + key + " ") >= 0;
-    })) return false;
+    });
+    // Spotify can return a romanized artist while YouTube Music credits the
+    // same performer in the native script (Ayumi Hamasaki / 浜崎あゆみ).
+    // Cross-script names alone are not proof of identity, so only allow the
+    // fallback after an exact title match and a near-exact duration match.
+    var titleArtistMatched = candidateTitle.creditedArtist && durationClose &&
+      downloadArtistsUseDifferentScripts(artistName, candidateTitle.creditedArtist);
+    if (!artistMatched && !titleArtistMatched &&
+        !(durationClose && downloadArtistsUseDifferentScripts(artistName, candidateArtists))) {
+      return false;
+    }
   }
-  var candidateDuration = Number(candidate.duration_ms || 0);
   return !(durationMs > 0 && candidateDuration > 0 && Math.abs(durationMs - candidateDuration) > 15000);
 }
 
@@ -5990,6 +6035,20 @@ registerExtension({
         var strippedQuery = ((artistName ? artistName + " " : "") + strippedTitle).trim();
         if (queries.indexOf(strippedQuery) < 0) queries.push(strippedQuery);
       }
+      // Artist + native title can yield no results when the provider indexes
+      // the artist only in another script. Retry the title by itself; the
+      // strict title/artist/duration validator below still decides identity.
+      var titleOnlyQuery = String(trackName || "").trim();
+      if (titleOnlyQuery && queries.indexOf(titleOnlyQuery) < 0) {
+        queries.push(titleOnlyQuery);
+      }
+      var punctuationFreeTitle = titleOnlyQuery
+        .replace(/[、，,。・:：]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (punctuationFreeTitle && queries.indexOf(punctuationFreeTitle) < 0) {
+        queries.push(punctuationFreeTitle);
+      }
       var durationMs = Number(options && (options.duration_ms || options.track && options.track.duration_ms) || 0);
       for (var queryIndex = 0; queryIndex < queries.length; queryIndex++) {
         if (utils && typeof utils.isDownloadCancelled === "function" && utils.isDownloadCancelled()) {
@@ -6002,6 +6061,26 @@ registerExtension({
               downloadRecordingMatches(trackName, artistName, durationMs, item)) {
             L("info", "[YTMusic] Found verified track:", item.id, item.name || item.title);
             return { available: true, track_id: item.id };
+          }
+        }
+      }
+
+
+      // Some legitimate catalog versions (especially older remixes) are
+      // indexed only as music videos. Search that index after the Songs
+      // results, but keep the same exact-title, artist-credit and duration
+      // checks so live, short, karaoke and unrelated uploads stay rejected.
+      for (var videoQueryIndex = 0; videoQueryIndex < queries.length; videoQueryIndex++) {
+        if (utils && typeof utils.isDownloadCancelled === "function" && utils.isDownloadCancelled()) {
+          return { available: false, reason: "download cancelled" };
+        }
+        var videoResults = performSearchSync(queries[videoQueryIndex], YT_SEARCH_PARAMS.videos) || [];
+        for (var videoIndex = 0; videoIndex < videoResults.length; videoIndex++) {
+          var videoItem = videoResults[videoIndex];
+          if (videoItem && videoItem.id &&
+              downloadRecordingMatches(trackName, artistName, durationMs, videoItem)) {
+            L("info", "[YTMusic] Found verified video track:", videoItem.id, videoItem.name || videoItem.title);
+            return { available: true, track_id: videoItem.id };
           }
         }
       }

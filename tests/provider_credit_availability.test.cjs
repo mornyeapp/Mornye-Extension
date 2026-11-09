@@ -7,6 +7,7 @@ const vm = require('node:vm');
 function runtime(provider, respond) {
   let extension;
   const queries = [];
+  const searchParams = [];
   const normalize = value => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const c = vm.createContext({
     registerExtension(value) { extension = value; },
@@ -20,13 +21,24 @@ function runtime(provider, respond) {
     },
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../sources', provider, 'index.js'), 'utf8'), c);
-  function search(query) {
+  function search(query, params) {
     queries.push(query);
-    return respond(query).map(track => {
+    searchParams.push(params);
+    return respond(query, params).map(track => {
       const common = { id: 'track001', name: 'Signal', artists: 'Lead Artist', duration_ms: 180000, ...track };
       if (provider === 'deezer') return { id: 7, title: common.name, artist: { name: common.artists }, duration: common.duration_ms / 1000 };
       if (provider === 'soundcloud') return { id: 70000, title: common.name, publisher_metadata: { artist: common.artists }, duration: common.duration_ms, access: 'playable', streamable: true };
       if (provider === 'qobuz-web') return { id: '7', title: common.name, performer: { name: common.artists }, duration: common.duration_ms / 1000 };
+      if (provider === 'ytmusic-spotiflac') {
+        return {
+          id: common.id,
+          title: common.name,
+          artist: common.artists,
+          duration: common.duration_ms / 1000,
+          item_type: 'track',
+          preview_url: 'https://example.test/audio.m4a',
+        };
+      }
       return { ...common, item_type: 'track', preview_url: 'https://example.test/audio.m4a' };
     });
   }
@@ -47,6 +59,7 @@ function runtime(provider, respond) {
     c,
     extension,
     queries,
+    searchParams,
     check: (title = 'Signal (with Guest Artist)', options = {}) => extension.checkAvailability('', title, 'Lead Artist', { duration_ms: 180000, ...options }),
   };
 }
@@ -108,6 +121,105 @@ test('YouTube Music recording validation preserves non-Latin titles and artist n
   const result = app.extension.checkAvailability('', '悲しみがとまらない', '杏里', { duration_ms: 180000 });
   assert.equal(result.available, true);
   assert.equal(app.queries.length, 1);
+});
+
+test('YouTube Music validates real parser-shaped romanized/native matches', () => {
+  for (const track of [
+    { title: 'fated', duration: 334 },
+    { title: 'MOON', duration: 346 },
+    { title: 'blossom', duration: 245 },
+  ]) {
+    const app = runtime('ytmusic-spotiflac', () => [{
+      name: track.title,
+      artists: '浜崎あゆみ',
+      duration_ms: track.duration * 1000,
+    }]);
+    const result = app.extension.checkAvailability('', track.title, 'Ayumi Hamasaki', {
+      duration_ms: track.duration * 1000,
+    });
+    assert.equal(result.available, true, track.title);
+  }
+});
+
+test('YouTube Music retries a native title without a romanized artist and validates the native artist by duration', () => {
+  const app = runtime('ytmusic-spotiflac', query => {
+    if (query === '春よ、来い') {
+      return [{
+        name: '春よ、来い',
+        artists: '浜崎あゆみ',
+        duration_ms: 310000,
+      }];
+    }
+    return [];
+  });
+  const result = app.extension.checkAvailability('', '春よ、来い', 'Ayumi Hamasaki', {
+    duration_ms: 310000,
+  });
+  assert.equal(result.available, true);
+  assert.ok(app.queries.includes('春よ、来い'));
+});
+
+test('YouTube Music cross-script artist fallback rejects the wrong-duration recording', () => {
+  const app = runtime('ytmusic-spotiflac', () => [{
+    name: '春よ、来い',
+    artists: '松任谷由実',
+    duration_ms: 279000,
+  }]);
+  const result = app.extension.checkAvailability('', '春よ、来い', 'Ayumi Hamasaki', {
+    duration_ms: 310000,
+  });
+  assert.equal(result.available, false);
+});
+
+test('YouTube Music same-script wrong artist remains rejected at the same duration', () => {
+  const app = runtime('ytmusic-spotiflac', () => [{
+    name: 'Signal',
+    artists: 'Different Singer',
+    duration_ms: 180000,
+  }]);
+  assert.equal(app.check('Signal').available, false);
+});
+
+test('YouTube Music retries the video index for an exact remix with an artist prefix and matching duration', () => {
+  const videoFilter = 'EgWKAQIQAQ%3D%3D';
+  const app = runtime('ytmusic-spotiflac', (query, params) => {
+    if (params === videoFilter && query.includes('snowy kiss')) {
+      return [{
+        name: '浜崎あゆみ/snowy kiss (Shohei Matsumoto remix)',
+        artists: '大熊雄太',
+        duration_ms: 423000,
+      }];
+    }
+    return [];
+  });
+  const result = app.extension.checkAvailability('', 'snowy kiss - Shohei Matsumoto remix', 'Ayumi Hamasaki', {
+    duration_ms: 418000,
+  });
+  assert.equal(result.available, true);
+  assert.ok(app.searchParams.includes(videoFilter));
+});
+
+test('YouTube Music video fallback rejects karaoke and short versions', () => {
+  const videoFilter = 'EgWKAQIQAQ%3D%3D';
+  for (const candidate of [
+    {
+      name: '浜崎あゆみ (Ayumi Hamasaki) / Sweet Scar KARAOKE version instrumental',
+      artists: 'JpopKARAOKE',
+      duration_ms: 247000,
+    },
+    {
+      name: 'snowy kiss - Shohei Matsumoto remix - short ver.',
+      artists: 'Linza AyuAngel',
+      duration_ms: 87000,
+    },
+  ]) {
+    const app = runtime('ytmusic-spotiflac', (query, params) => params === videoFilter ? [candidate] : []);
+    const title = candidate.name.includes('KARAOKE')
+      ? 'Sweet scar - Instrumental'
+      : 'snowy kiss - Shohei Matsumoto remix';
+    const duration_ms = title.startsWith('Sweet') ? 250000 : 418000;
+    assert.equal(app.extension.checkAvailability('', title, 'Ayumi Hamasaki', { duration_ms }).available, false);
+  }
 });
 
 for (const provider of ['deezer', 'soundcloud', 'ytmusic-spotiflac', 'jiosaavn']) {
