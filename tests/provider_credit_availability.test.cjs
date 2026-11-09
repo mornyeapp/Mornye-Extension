@@ -7,6 +7,7 @@ const vm = require('node:vm');
 function runtime(provider, respond) {
   let extension;
   const queries = [];
+  const searchParams = [];
   const normalize = value => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const c = vm.createContext({
     registerExtension(value) { extension = value; },
@@ -20,13 +21,24 @@ function runtime(provider, respond) {
     },
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../sources', provider, 'index.js'), 'utf8'), c);
-  function search(query) {
+  function search(query, params) {
     queries.push(query);
-    return respond(query).map(track => {
+    searchParams.push(params);
+    return respond(query, params).map(track => {
       const common = { id: 'track001', name: 'Signal', artists: 'Lead Artist', duration_ms: 180000, ...track };
       if (provider === 'deezer') return { id: 7, title: common.name, artist: { name: common.artists }, duration: common.duration_ms / 1000 };
       if (provider === 'soundcloud') return { id: 70000, title: common.name, publisher_metadata: { artist: common.artists }, duration: common.duration_ms, access: 'playable', streamable: true };
       if (provider === 'qobuz-web') return { id: '7', title: common.name, performer: { name: common.artists }, duration: common.duration_ms / 1000 };
+      if (provider === 'ytmusic-spotiflac') {
+        return {
+          id: common.id,
+          title: common.name,
+          artist: common.artists,
+          duration: common.duration_ms / 1000,
+          item_type: 'track',
+          preview_url: 'https://example.test/audio.m4a',
+        };
+      }
       return { ...common, item_type: 'track', preview_url: 'https://example.test/audio.m4a' };
     });
   }
@@ -47,6 +59,7 @@ function runtime(provider, respond) {
     c,
     extension,
     queries,
+    searchParams,
     check: (title = 'Signal (with Guest Artist)', options = {}) => extension.checkAvailability('', title, 'Lead Artist', { duration_ms: 180000, ...options }),
   };
 }
@@ -108,6 +121,215 @@ test('YouTube Music recording validation preserves non-Latin titles and artist n
   const result = app.extension.checkAvailability('', '悲しみがとまらない', '杏里', { duration_ms: 180000 });
   assert.equal(result.available, true);
   assert.equal(app.queries.length, 1);
+});
+
+test('YouTube Music validates real parser-shaped romanized/native matches', () => {
+  for (const track of [
+    { title: 'fated', duration: 334 },
+    { title: 'MOON', duration: 346 },
+    { title: 'blossom', duration: 245 },
+  ]) {
+    const app = runtime('ytmusic-spotiflac', () => [{
+      name: track.title,
+      artists: '浜崎あゆみ',
+      duration_ms: track.duration * 1000,
+    }]);
+    const result = app.extension.checkAvailability('', track.title, 'Ayumi Hamasaki', {
+      duration_ms: track.duration * 1000,
+    });
+    assert.equal(result.available, true, track.title);
+  }
+});
+
+test('YouTube Music accepts a bilingual title only when its edition and duration agree', () => {
+  const matching = runtime('ytmusic-spotiflac', () => [{
+    name: 'オヒアの木 (A BALLADS 2) - Ohianoki (A BALLADS 2)',
+    artists: 'ayumi hamasaki',
+    duration_ms: 280000,
+  }]);
+  assert.equal(matching.extension.checkAvailability(
+    '',
+    'オヒアの木 - A BALLADS 2',
+    'Ayumi Hamasaki',
+    { duration_ms: 280000 },
+  ).available, true);
+
+  for (const candidate of [
+    {
+      name: 'オヒアの木 (A BALLADS 2) - Ohianoki (A BALLADS 2)',
+      artists: 'ayumi hamasaki',
+      duration_ms: 240000,
+    },
+    {
+      name: 'オヒアの木 (A BALLADS 2) - Live',
+      artists: 'ayumi hamasaki',
+      duration_ms: 280000,
+    },
+  ]) {
+    const app = runtime('ytmusic-spotiflac', () => [candidate]);
+    assert.equal(app.extension.checkAvailability(
+      '',
+      'オヒアの木 - A BALLADS 2',
+      'Ayumi Hamasaki',
+      { duration_ms: 280000 },
+    ).available, false);
+  }
+});
+
+test('YouTube Music removes a trailing album title only when queue album metadata agrees', () => {
+  const pollutedTitle = 'Boys & Girls - LOVEppears / appears -20th Anniversary Edition-';
+  const albumName = 'LOVEppears / appears [20th Anniversary Edition- (Disc 1)]';
+  const matching = runtime('ytmusic-spotiflac', query =>
+    query === 'Ayumi Hamasaki Boys & Girls'
+      ? [{
+          name: 'Boys & Girls (LOVEppears / appears -20th Anniversary Edition-)',
+          artists: '浜崎あゆみ',
+          duration_ms: 234000,
+        }]
+      : []);
+  assert.equal(matching.extension.checkAvailability('', pollutedTitle, 'Ayumi Hamasaki', {
+    duration_ms: 234000,
+    track: { album_name: albumName },
+  }).available, true);
+  assert.ok(matching.queries.includes('Ayumi Hamasaki Boys & Girls'));
+
+  const unrelatedAlbum = runtime('ytmusic-spotiflac', () => [{
+    name: 'Boys & Girls',
+    artists: '浜崎あゆみ',
+    duration_ms: 234000,
+  }]);
+  assert.equal(unrelatedAlbum.extension.checkAvailability('', pollutedTitle, 'Ayumi Hamasaki', {
+    duration_ms: 234000,
+    track: { album_name: 'Different Album' },
+  }).available, false);
+});
+
+test('YouTube Music accepts the exact second half of a malformed bilingual edition title', () => {
+  const app = runtime('ytmusic-spotiflac', query =>
+    query === 'Ayumi Hamasaki æternal'
+      ? [{
+          name: '?ternal (A BALLADS 2) - æternal (A BALLADS 2)',
+          artists: 'ayumi hamasaki',
+          duration_ms: 284000,
+        }]
+      : []);
+  assert.equal(app.extension.checkAvailability('', 'æternal - A BALLADS 2', 'Ayumi Hamasaki', {
+    duration_ms: 284000,
+    track: { album_name: 'A BALLADS 2' },
+  }).available, true);
+});
+
+test('YouTube Music preserves a quoted mix while removing an undelimited album suffix', () => {
+  const albumName = 'LOVEppears / appears [20th Anniversary Edition- (Disc 1)]';
+  const cases = [
+    {
+      queued: 'appears - "JP\'s SoundFactory Mix" LOVEppears / appears -20th Anniversary Edition-',
+      found: 'appears "JP\'s SoundFactory Mix" (LOVEppears / appears -20th Anniversary Edition-)',
+      duration: 481000,
+    },
+    {
+      queued: 'appears - "HΛL\'s Mix" LOVEppears / appears -20th Anniversary Edition-',
+      found: 'appears "HΛL\'s Mix" (LOVEppears / appears -20th Anniversary Edition-)',
+      duration: 282000,
+    },
+    {
+      queued: 'immature - "D-Z DUAL LUCIFER MIX" LOVEppears / appears -20th Anniversary Edition-',
+      found: 'immature "D-Z DUAL LUCIFER MIX" (LOVEppears / appears -20th Anniversary Edition-)',
+      duration: 277000,
+    },
+  ];
+  for (const item of cases) {
+    const app = runtime('ytmusic-spotiflac', () => [{
+      name: item.found,
+      artists: 'ayumi hamasaki',
+      duration_ms: item.duration,
+    }]);
+    assert.equal(app.extension.checkAvailability('', item.queued, 'Ayumi Hamasaki', {
+      duration_ms: item.duration,
+      track: { album_name: albumName },
+    }).available, true, item.queued);
+  }
+});
+
+test('YouTube Music retries a native title without a romanized artist and validates the native artist by duration', () => {
+  const app = runtime('ytmusic-spotiflac', query => {
+    if (query === '春よ、来い') {
+      return [{
+        name: '春よ、来い',
+        artists: '浜崎あゆみ',
+        duration_ms: 310000,
+      }];
+    }
+    return [];
+  });
+  const result = app.extension.checkAvailability('', '春よ、来い', 'Ayumi Hamasaki', {
+    duration_ms: 310000,
+  });
+  assert.equal(result.available, true);
+  assert.ok(app.queries.includes('春よ、来い'));
+});
+
+test('YouTube Music cross-script artist fallback rejects the wrong-duration recording', () => {
+  const app = runtime('ytmusic-spotiflac', () => [{
+    name: '春よ、来い',
+    artists: '松任谷由実',
+    duration_ms: 279000,
+  }]);
+  const result = app.extension.checkAvailability('', '春よ、来い', 'Ayumi Hamasaki', {
+    duration_ms: 310000,
+  });
+  assert.equal(result.available, false);
+});
+
+test('YouTube Music same-script wrong artist remains rejected at the same duration', () => {
+  const app = runtime('ytmusic-spotiflac', () => [{
+    name: 'Signal',
+    artists: 'Different Singer',
+    duration_ms: 180000,
+  }]);
+  assert.equal(app.check('Signal').available, false);
+});
+
+test('YouTube Music retries the video index for an exact remix with an artist prefix and matching duration', () => {
+  const videoFilter = 'EgWKAQIQAQ%3D%3D';
+  const app = runtime('ytmusic-spotiflac', (query, params) => {
+    if (params === videoFilter && query.includes('snowy kiss')) {
+      return [{
+        name: '浜崎あゆみ/snowy kiss (Shohei Matsumoto remix)',
+        artists: '大熊雄太',
+        duration_ms: 423000,
+      }];
+    }
+    return [];
+  });
+  const result = app.extension.checkAvailability('', 'snowy kiss - Shohei Matsumoto remix', 'Ayumi Hamasaki', {
+    duration_ms: 418000,
+  });
+  assert.equal(result.available, true);
+  assert.ok(app.searchParams.includes(videoFilter));
+});
+
+test('YouTube Music video fallback rejects karaoke and short versions', () => {
+  const videoFilter = 'EgWKAQIQAQ%3D%3D';
+  for (const candidate of [
+    {
+      name: '浜崎あゆみ (Ayumi Hamasaki) / Sweet Scar KARAOKE version instrumental',
+      artists: 'JpopKARAOKE',
+      duration_ms: 247000,
+    },
+    {
+      name: 'snowy kiss - Shohei Matsumoto remix - short ver.',
+      artists: 'Linza AyuAngel',
+      duration_ms: 87000,
+    },
+  ]) {
+    const app = runtime('ytmusic-spotiflac', (query, params) => params === videoFilter ? [candidate] : []);
+    const title = candidate.name.includes('KARAOKE')
+      ? 'Sweet scar - Instrumental'
+      : 'snowy kiss - Shohei Matsumoto remix';
+    const duration_ms = title.startsWith('Sweet') ? 250000 : 418000;
+    assert.equal(app.extension.checkAvailability('', title, 'Ayumi Hamasaki', { duration_ms }).available, false);
+  }
 });
 
 for (const provider of ['deezer', 'soundcloud', 'ytmusic-spotiflac', 'jiosaavn']) {
