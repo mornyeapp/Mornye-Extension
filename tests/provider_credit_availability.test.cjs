@@ -219,6 +219,38 @@ test('YouTube Music accepts the exact second half of a malformed bilingual editi
   }).available, true);
 });
 
+test('YouTube Music preserves a quoted mix while removing an undelimited album suffix', () => {
+  const albumName = 'LOVEppears / appears [20th Anniversary Edition- (Disc 1)]';
+  const cases = [
+    {
+      queued: 'appears - "JP\'s SoundFactory Mix" LOVEppears / appears -20th Anniversary Edition-',
+      found: 'appears "JP\'s SoundFactory Mix" (LOVEppears / appears -20th Anniversary Edition-)',
+      duration: 481000,
+    },
+    {
+      queued: 'appears - "HΛL\'s Mix" LOVEppears / appears -20th Anniversary Edition-',
+      found: 'appears "HΛL\'s Mix" (LOVEppears / appears -20th Anniversary Edition-)',
+      duration: 282000,
+    },
+    {
+      queued: 'immature - "D-Z DUAL LUCIFER MIX" LOVEppears / appears -20th Anniversary Edition-',
+      found: 'immature "D-Z DUAL LUCIFER MIX" (LOVEppears / appears -20th Anniversary Edition-)',
+      duration: 277000,
+    },
+  ];
+  for (const item of cases) {
+    const app = runtime('ytmusic-spotiflac', () => [{
+      name: item.found,
+      artists: 'ayumi hamasaki',
+      duration_ms: item.duration,
+    }]);
+    assert.equal(app.extension.checkAvailability('', item.queued, 'Ayumi Hamasaki', {
+      duration_ms: item.duration,
+      track: { album_name: albumName },
+    }).available, true, item.queued);
+  }
+});
+
 test('YouTube Music retries a native title without a romanized artist and validates the native artist by duration', () => {
   const app = runtime('ytmusic-spotiflac', query => {
     if (query === '春よ、来い') {

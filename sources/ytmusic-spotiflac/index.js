@@ -3431,6 +3431,17 @@ function downloadTitleWithoutAlbumSuffix(trackName, albumName) {
     }
     offset = title.indexOf(separator, offset + separator.length);
   }
+  // Some Spotify catalog rows append the album directly after a quoted mix
+  // name without a dash, e.g. `appears - "JP's SoundFactory Mix" LOVEppears
+  // / appears -20th Anniversary Edition-`. Compare every word boundary to
+  // the exact normalized album metadata instead of guessing a delimiter.
+  for (offset = 1; offset < title.length; offset++) {
+    if (!/\s/.test(title.charAt(offset - 1))) continue;
+    var directSuffix = title.slice(offset).trim();
+    if (downloadMatchValue(directSuffix) === albumKey) {
+      return title.slice(0, offset).replace(/\s+[-–—]?\s*$/, "").trim();
+    }
+  }
   if (title.endsWith(")")) {
     offset = title.indexOf(" (");
     while (offset >= 0) {
