@@ -176,6 +176,30 @@ test('YouTube Music accepts a bilingual title only when its edition and duration
   }
 });
 
+test('YouTube Music removes a trailing album title only when queue album metadata agrees', () => {
+  const pollutedTitle = 'Boys & Girls - LOVEppears / appears -20th Anniversary Edition-';
+  const albumName = 'LOVEppears / appears [20th Anniversary Edition- (Disc 1)]';
+  const matching = runtime('ytmusic-spotiflac', query =>
+    query === 'Ayumi Hamasaki Boys & Girls'
+      ? [{ name: 'Boys & Girls', artists: '浜崎あゆみ', duration_ms: 234000 }]
+      : []);
+  assert.equal(matching.extension.checkAvailability('', pollutedTitle, 'Ayumi Hamasaki', {
+    duration_ms: 234000,
+    track: { album_name: albumName },
+  }).available, true);
+  assert.ok(matching.queries.includes('Ayumi Hamasaki Boys & Girls'));
+
+  const unrelatedAlbum = runtime('ytmusic-spotiflac', () => [{
+    name: 'Boys & Girls',
+    artists: '浜崎あゆみ',
+    duration_ms: 234000,
+  }]);
+  assert.equal(unrelatedAlbum.extension.checkAvailability('', pollutedTitle, 'Ayumi Hamasaki', {
+    duration_ms: 234000,
+    track: { album_name: 'Different Album' },
+  }).available, false);
+});
+
 test('YouTube Music retries a native title without a romanized artist and validates the native artist by duration', () => {
   const app = runtime('ytmusic-spotiflac', query => {
     if (query === '春よ、来い') {

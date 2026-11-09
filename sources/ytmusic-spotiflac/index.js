@@ -3416,6 +3416,22 @@ function downloadCandidateTitleParts(value) {
   return parts;
 }
 
+function downloadTitleWithoutAlbumSuffix(trackName, albumName) {
+  var title = String(trackName || "").trim();
+  var albumKey = downloadMatchValue(albumName).replace(/\s+disc\s+\d+$/i, "").trim();
+  if (!title || !albumKey) return title;
+  var separator = " - ";
+  var offset = title.indexOf(separator);
+  while (offset >= 0) {
+    var suffix = title.slice(offset + separator.length).trim();
+    if (downloadMatchValue(suffix) === albumKey) {
+      return title.slice(0, offset).trim();
+    }
+    offset = title.indexOf(separator, offset + separator.length);
+  }
+  return title;
+}
+
 function downloadBilingualEditionTitleMatches(expectedKey, candidateTitle, durationClose) {
   if (!expectedKey || !durationClose) return false;
   var text = String(candidateTitle || "").trim();
@@ -6052,22 +6068,25 @@ registerExtension({
       return { available: true, track_id: spotifyId };
     }
 
-    var query = (artistName ? artistName + " " : "") + (trackName || "");
+    var albumName = options && (options.album_name || options.albumName ||
+      options.track && (options.track.album_name || options.track.albumName)) || "";
+    var resolvedTrackName = downloadTitleWithoutAlbumSuffix(trackName, albumName);
+    var query = (artistName ? artistName + " " : "") + (resolvedTrackName || "");
     if (!query.trim()) {
       return { available: false, reason: "no_search_query" };
     }
 
     try {
       var queries = [query.trim()];
-      var strippedTitle = stripTrackTitleAnnotations(trackName).replace(/\s+/g, " ").trim();
-      if (strippedTitle && strippedTitle !== String(trackName || "").trim()) {
+      var strippedTitle = stripTrackTitleAnnotations(resolvedTrackName).replace(/\s+/g, " ").trim();
+      if (strippedTitle && strippedTitle !== String(resolvedTrackName || "").trim()) {
         var strippedQuery = ((artistName ? artistName + " " : "") + strippedTitle).trim();
         if (queries.indexOf(strippedQuery) < 0) queries.push(strippedQuery);
       }
       // Artist + native title can yield no results when the provider indexes
       // the artist only in another script. Retry the title by itself; the
       // strict title/artist/duration validator below still decides identity.
-      var titleOnlyQuery = String(trackName || "").trim();
+      var titleOnlyQuery = String(resolvedTrackName || "").trim();
       if (titleOnlyQuery && queries.indexOf(titleOnlyQuery) < 0) {
         queries.push(titleOnlyQuery);
       }
@@ -6087,7 +6106,7 @@ registerExtension({
         for (var i = 0; i < results.length; i++) {
           var item = results[i];
           if (item && item.id && (item.item_type === "track" || item.type === "track") &&
-              downloadRecordingMatches(trackName, artistName, durationMs, item)) {
+              downloadRecordingMatches(resolvedTrackName, artistName, durationMs, item)) {
             L("info", "[YTMusic] Found verified track:", item.id, item.name || item.title);
             return { available: true, track_id: item.id };
           }
@@ -6107,7 +6126,7 @@ registerExtension({
         for (var videoIndex = 0; videoIndex < videoResults.length; videoIndex++) {
           var videoItem = videoResults[videoIndex];
           if (videoItem && videoItem.id &&
-              downloadRecordingMatches(trackName, artistName, durationMs, videoItem)) {
+              downloadRecordingMatches(resolvedTrackName, artistName, durationMs, videoItem)) {
             L("info", "[YTMusic] Found verified video track:", videoItem.id, videoItem.name || videoItem.title);
             return { available: true, track_id: videoItem.id };
           }
