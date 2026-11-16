@@ -7,6 +7,7 @@ const vm = require('node:vm');
 const root = path.join(__dirname, '../sources/soundcloud');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json')));
 const source = fs.readFileSync(path.join(root, 'index.js'), 'utf8');
+const json = body => ({ statusCode: 200, body: JSON.stringify(body) });
 const stream = 'https://playback.media-streaming.soundcloud.cloud/track/aac_160k/playlist.m3u8?token=signed';
 const mediaPlaylist = '#EXTM3U\n#EXTINF:3,\npart1.aac\n#EXTINF:3,\npart2.aac\n#EXT-X-ENDLIST';
 const transcoding = (extra = {}) => ({
@@ -39,6 +40,10 @@ function runtime() {
     URL: RuntimeURL, URLSearchParams, registerExtension() {}, log: { info() {}, debug() {}, warn() {}, error() {} },
     storage: { get() {}, set() {} },
     utils: { randomUserAgent: () => 'Test', isDownloadCancelled: () => false },
+    matching: {
+      compareStrings: (left, right) => left === right ? 1 : 0,
+      compareDuration: () => 1,
+    },
     http: { get(url) {
       calls.requests.push(url);
       return { statusCode: 200, body: url.includes('/media/') ? JSON.stringify({ url: stream }) : mediaPlaylist };
@@ -70,7 +75,7 @@ const download = (c, data = track(), quality = 'aac_160', progress = () => {}) =
   c.download(String(data.id), quality, '/music/folder.name/track.flac', progress, { preparedContext: { track: data } });
 
 test('manifest enables segmented downloads and the modern CDN', () => {
-  assert.equal(manifest.version, '1.0.14');
+  assert.equal(manifest.version, '1.0.15');
   assert.ok(manifest.requiredRuntimeFeatures.includes('downloadSegments@1'));
   assert.ok(manifest.permissions.network.includes('*.media-streaming.soundcloud.cloud'));
   assert.equal(manifest.qualityOptions[0].id, 'aac_160');
@@ -140,6 +145,46 @@ test('blocked tracks and preview-only tracks never download', () => {
     assert.equal(calls.downloads.length + calls.segments.length, 0);
   }
 });
+
+test('full tracks without the removed access field remain available', () => {
+  const full = track(undefined, {
+    access: undefined, title: 'Track', user: { username: 'Artist' },
+    policy: 'ALLOW', duration: 6000, full_duration: 6000,
+  });
+  const { c } = runtime();
+  c.http.get = url => {
+    if (url.includes('/search/tracks')) return json({ collection: [full] });
+    if (url.includes('/tracks/')) return json(full);
+    return { statusCode: 404 };
+  };
+
+  const direct = c.checkAvailability('', 'Track', 'Artist', {
+    spotify_id: String(full.id), track: { provider_id: 'soundcloud' },
+  });
+  assert.equal(direct.available, true, JSON.stringify(direct));
+  assert.equal(direct.track_id, String(full.id));
+
+  const searched = c.checkAvailability('', 'Track', 'Artist', { duration_ms: 6000 });
+  assert.equal(searched.available, true, JSON.stringify(searched));
+  assert.equal(searched.track_id, String(full.id));
+});
+
+
+for (const policy of ['SNIP', 'BLOCK']) {
+  test(`${policy} tracks stay unavailable even when access is absent`, () => {
+    const preview = track(undefined, {
+      access: undefined, title: 'Track', user: { username: 'Artist' }, policy,
+    });
+    const { c } = runtime();
+    c.http.get = url => url.includes('/tracks/') ? json(preview) : { statusCode: 404 };
+
+    const result = c.checkAvailability('', 'Track', 'Artist', {
+      spotify_id: String(preview.id), track: { provider_id: 'soundcloud' },
+    });
+    assert.equal(result.available, false);
+    assert.equal(result.skip_fallback, true);
+  });
+}
 
 test('prepared context initializes a client ID in a new runtime', () => {
   const { c, calls } = runtime();
