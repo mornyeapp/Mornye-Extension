@@ -9,6 +9,15 @@ const source = fs.readFileSync(path.join(__dirname, '../sources/amazon/index.js'
 const ok = body => ({ statusCode: 200, body: JSON.stringify(body) });
 const audio = { audio: { url: 'https://offline.invalid/audio.flac', codec: 'flac', bitDepth: 24, sampleRate: 96000 } };
 
+test('best quality accepts CD FLAC without requiring 24-bit audio', () => {
+  const app = load(() => ok({ audio: { ...audio.audio, bitDepth: 16, sampleRate: 44100 } }));
+  const result = app.download('best');
+  assert.equal(result.success, true);
+  assert.equal(result.bit_depth, 16);
+  assert.equal(result.sample_rate, 44100);
+  assert.equal(app.mediaCalls().length, 1);
+});
+
 function load(respond, overrides = {}) {
   const calls = [], sleeps = [], downloads = [];
   let ticketCount = 0, extension;
