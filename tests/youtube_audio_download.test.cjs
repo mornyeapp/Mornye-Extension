@@ -140,9 +140,129 @@ test('a single client retains AAC as fallback if its preferred Opus transfer fai
 
 test('new direct clients replace the broken Android VR first choice', () => {
   const { c } = runtime();
-  assert.equal(c.INNERTUBE_CLIENTS[0].name, 'tv_samsung');
-  assert.ok(c.INNERTUBE_CLIENTS.some(client => client.name === 'web_embedded'));
+  // The client that needs no player script and no ad wait is asked first.
+  assert.equal(c.INNERTUBE_CLIENTS[0].name, 'visionos');
+  assert.equal(c.INNERTUBE_CLIENTS[0].requiresJsPlayer, false);
+  assert.equal(c.INNERTUBE_CLIENTS[1].name, 'tv_samsung');
+  assert.equal(c.INNERTUBE_CLIENTS.find(client => client.name === 'web_embedded').requiresGvsPoToken, true);
   assert.ok(!c.INNERTUBE_CLIENTS.some(client => client.name === 'android_vr'));
+});
+
+// A cut-down player: one top-level statement per line, as YouTube ships it.
+// `guarded`, `later` and the class only mention the marker; `wrong` has the
+// plain statement but is no URL builder; `build` is the real one, and its
+// body runs over two lines.
+const PLAYER = [
+  'var _yt_player={};(function(g){var window=this;var wrong,build,later;',
+  'var Url=function(a){this.q={};this.raw=a};Url.prototype.set=function(k,v){this.q[k]=v};Url.prototype.get=function(k){return this.q[k]};Url.prototype.zz=function(){this.q.n=String(this.q.n).split("").reverse().join("")};',
+  'g.guarded=function(a,b){var d=new Url(a);d.get("alr")||d.set("alr","yes");return d};',
+  'wrong=function(a,b,c){a.set("alr","yes");return a};',
+  'later=async function(a){var c=new Url(a);c.set("alr","yes");return c};',
+  'build=function(a,b="",c=""){a=new Url(a);',
+  'a.set("alr","yes");c&&a.set(b,encodeURIComponent(decodeURIComponent(c).toUpperCase()));return a};',
+  'var Request=class{constructor(a){this.url=new Url(a);',
+  'this.url.set("alr","yes")}};',
+  '})(_yt_player);',
+].join('\n');
+
+test('every plain marker statement names a candidate, guarded and async ones do not', () => {
+  const { c } = runtime();
+  assert.deepEqual([...c.findYouTubeURLTransformFunctions(PLAYER)], ['wrong', 'build']);
+});
+
+test('the solver passes over a candidate that is not the URL builder', () => {
+  const { c } = runtime();
+  const solver = c.buildYouTubeChallengeSolver(PLAYER);
+  assert.deepEqual({ ...solver('a+b/c', 'abc') }, { sig: 'A+B/C', n: 'cba' });
+  assert.deepEqual({ ...solver('', 'xyz') }, { n: 'zyx' });
+});
+
+test('the player is always read in its plain build', () => {
+  const { c } = runtime();
+  for (const page of [
+    '"jsUrl":"\\/s\\/player\\/ab12cd34\\/player_es6.vflset\\/id_ID\\/base.js"',
+    '"PLAYER_JS_URL":"/s/player/ab12cd34/player_ias_tce.vflset/en_US/base.js"',
+  ]) {
+    assert.equal(c.extractYouTubePlayerURL(page),
+      'https://www.youtube.com/s/player/ab12cd34/player_ias.vflset/en_US/base.js');
+  }
+});
+
+const instream = ad => ({ instreamVideoAdRenderer: ad });
+
+test('the ad before a song sets how long its media URLs stay refused', () => {
+  const { c } = runtime();
+  assert.equal(c.prerollWaitMs({}), 0);
+  const start = renderer => ({ adPlacementRenderer: {
+    config: { adPlacementConfig: { kind: 'AD_PLACEMENT_KIND_START' } }, renderer,
+  } });
+  // A skippable ad counts until its skip button, another one by its length.
+  assert.equal(c.prerollWaitMs({ adPlacements: [
+    start(instream({ skipOffsetMilliseconds: 5000, playerVars: 'length_seconds=30' })),
+    start(instream({ playerVars: 'a=1&length_seconds=15' })),
+    { adPlacementRenderer: { config: { adPlacementConfig: { kind: 'AD_PLACEMENT_KIND_END' } },
+      renderer: instream({ playerVars: 'length_seconds=60' }) } },
+  ] }), 21000);
+  const slot = renderingContent => ({ adSlotRenderer: {
+    adSlotMetadata: { triggerEvent: 'SLOT_TRIGGER_EVENT_BEFORE_CONTENT' },
+    fulfillmentContent: { fulfilledLayout: { playerBytesAdLayoutRenderer: { renderingContent } } },
+  } });
+  assert.equal(c.prerollWaitMs({ adSlots: [
+    slot(instream({ skipOffsetMilliseconds: 2000 })),
+    slot({ playerBytesSequentialLayoutRenderer: { sequentialLayouts: [
+      { playerBytesAdLayoutRenderer: { renderingContent: instream({ playerVars: 'length_seconds=6' }) } },
+    ] } }),
+  ] }), 9000);
+  // A long unskippable break does not hold a download for ever.
+  assert.equal(c.prerollWaitMs({ adPlacements: [start(instream({ playerVars: 'length_seconds=600' }))] }),
+    c.MAX_PREROLL_WAIT_MS);
+});
+
+test('a download starts only once the ad wait is over, and a cancel ends the wait', () => {
+  const { c, calls } = runtime();
+  let clock = 1000;
+  let cancelAt = Infinity;
+  c.now = () => clock;
+  c.utils.sleep = ms => { clock += ms; return clock < cancelAt; };
+  c.fetch = () => ({ ok: true, json: () => ({
+    playabilityStatus: { status: 'OK' },
+    adPlacements: [{ adPlacementRenderer: {
+      config: { adPlacementConfig: { kind: 'AD_PLACEMENT_KIND_START' } },
+      renderer: instream({ skipOffsetMilliseconds: 5000 }),
+    } }],
+    streamingData: { adaptiveFormats: [audio(251, 'opus')] },
+  }) });
+  c.INNERTUBE_CLIENTS = [c.INNERTUBE_CLIENTS[0]];
+  c.file.download = (url, output) => {
+    calls.downloads.push(clock);
+    return { success: true, path: output };
+  };
+  assert.equal(c.tryInnerTubeDownloadsLazily('id', {}, '/music/song.flac', '', '').audio_codec, 'opus');
+  assert.deepEqual(calls.downloads, [7000]);
+
+  cancelAt = clock + 1000;
+  assert.equal(c.tryInnerTubeDownloadsLazily('id', {}, '/music/song.flac', '', ''), null);
+  assert.equal(calls.downloads.length, 1);
+});
+
+test('song links of every YouTube host and shape are read', () => {
+  const { c } = runtime();
+  for (const url of [
+    'https://youtube.com/watch?v=abc123DEF_-&si=x',
+    'https://m.youtube.com/watch?v=abc123DEF_-',
+    'https://youtu.be/abc123DEF_-?si=x',
+    'https://www.youtube.com/shorts/abc123DEF_-',
+    'https://youtube.com/live/abc123DEF_-?feature=share',
+  ]) {
+    assert.equal(c.extractVideoId(url), 'abc123DEF_-', url);
+  }
+  assert.equal(c.extractVideoId('https://www.youtube.com/feed/library'), null);
+  const patterns = JSON.parse(fs.readFileSync(
+    path.join(__dirname, '../sources/ytmusic-spotiflac/manifest.json'), 'utf8')).urlHandler.patterns;
+  // No path limit: a playlist or a link without "www" has to reach the extension.
+  for (const host of ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtu.be']) {
+    assert.ok(patterns.includes(host), host);
+  }
 });
 
 test('video-only streams are never offered as Opus audio', () => {
@@ -193,6 +313,8 @@ test('JS clients send the current player timestamp and share the player cache', 
   const { c } = runtime();
   let scripts = 0;
   let requests = 0;
+  // The embedded client only offers audio with a token.
+  c.getGvsPoToken = () => 'token';
   c.fetch = (url, options) => {
     if (url.endsWith('/base.js')) {
       scripts++;

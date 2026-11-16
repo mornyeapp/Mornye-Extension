@@ -329,7 +329,33 @@ function getYt1dConfig() {
 
 // Direct clients follow yt-dlp's current client contexts. Android VR 1.65.10
 // has returned 403 for all formats since August 2026, so it is not a fallback.
+// visionOS goes first: its formats carry plain URLs, so it needs neither the
+// player script nor the wait for an ad that the TV client has.
 var INNERTUBE_CLIENTS = [
+  {
+    name: "visionos",
+    clientHeaderName: "101",
+    requiresGvsPoToken: false,
+    requiresJsPlayer: false,
+    body: {
+      context: {
+        client: {
+          clientName: "VISIONOS",
+          clientVersion: "1.02",
+          deviceMake: "Apple",
+          deviceModel: "RealityDevice17,1",
+          hl: "en",
+          gl: "US",
+          timeZone: "UTC",
+          utcOffsetMinutes: 0,
+          osName: "visionOS",
+          osVersion: "26.5.23O471",
+        },
+      },
+    },
+    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15",
+    key: CONFIG.innerTubeApiKey,
+  },
   {
     name: "tv_samsung",
     clientHeaderName: "7",
@@ -357,7 +383,8 @@ var INNERTUBE_CLIENTS = [
   {
     name: "web_embedded",
     clientHeaderName: "56",
-    requiresGvsPoToken: false,
+    // Its media URLs need a token since November 2026, as for the web client.
+    requiresGvsPoToken: true,
     requiresJsPlayer: true,
     body: {
       context: {
@@ -771,6 +798,17 @@ function extractYouTubePlayerURL(text) {
   if (!match) return "";
   var playerURL = String(match[1] || match[0] || "").replace(/\\\//g, "/");
   if (!playerURL) return "";
+  // A page can name any build of its player (es6, tce, a translated one).
+  // They sign alike, and the plain build is the one yt-dlp solves, so the
+  // same player id is always read in that build.
+  var playerId = playerURL.match(/\/s\/player\/([A-Za-z0-9_-]+)\//);
+  if (playerId) {
+    return (
+      "https://www.youtube.com/s/player/" +
+      playerId[1] +
+      "/player_ias.vflset/en_US/base.js"
+    );
+  }
   if (playerURL.indexOf("//") === 0) return "https:" + playerURL;
   if (playerURL.charAt(0) === "/") return "https://www.youtube.com" + playerURL;
   return /^https?:\/\//i.test(playerURL) ? playerURL : "";
@@ -856,32 +894,44 @@ function loadYouTubePlayerJS(playerUrl) {
   return js;
 }
 
-function findYouTubeURLTransformFunction(playerJS) {
+// Names of the player functions that may build a media URL from
+// (url, key, value). The player marks that function with a plain
+// `x.set("alr","yes")` statement, as yt-dlp's solver looks for. The same call
+// also appears guarded (`x.get("alr")||x.set(...)`), in async functions and
+// in class bodies, and the first one in the file is no longer the right one,
+// so every plain statement names a candidate and the solver tries them all.
+// The player starts each top-level statement on its own line; a function body
+// can continue over further lines, so the owner is the nearest earlier line
+// that starts a function.
+function findYouTubeURLTransformFunctions(playerJS) {
   var text = String(playerJS || "");
-  var marker = /\.set\(\s*["']alr["']\s*,\s*["']yes["']\s*\)/g.exec(text);
-  if (!marker) return "";
-
-  var prefix = text.substring(Math.max(0, marker.index - 12000), marker.index);
-  var patterns = [
-    /(?:var|let|const)\s+([A-Za-z_$][\w$]*)\s*=\s*function\s*\([^)]*\)\s*\{/g,
-    /function\s+([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*\{/g,
-    /([A-Za-z_$][\w$]*)\s*=\s*function\s*\([^)]*\)\s*\{/g,
-  ];
-  var best = "";
-  for (var pi = 0; pi < patterns.length; pi++) {
-    var pattern = patterns[pi];
-    var match;
-    while ((match = pattern.exec(prefix))) {
-      if (match[1]) best = match[1];
+  var marker =
+    /[;{]\s*[A-Za-z_$][\w$]*\.set\(\s*["']alr["']\s*,\s*["']yes["']\s*\)/g;
+  var definition =
+    /^(?:(?:var|let|const)\s+)?([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*=\s*(async\s+)?function\s*\(|^(async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/;
+  var names = [];
+  var match;
+  while ((match = marker.exec(text))) {
+    var lineStart = text.lastIndexOf("\n", match.index) + 1;
+    for (var lines = 0; lines < 40; lines++) {
+      var owner = definition.exec(text.substring(lineStart, lineStart + 200));
+      if (owner) {
+        var name = owner[1] || owner[4];
+        var isAsync = owner[2] || owner[3];
+        if (name && !isAsync && names.indexOf(name) < 0) names.push(name);
+        break;
+      }
+      if (lineStart === 0) break;
+      lineStart = text.lastIndexOf("\n", lineStart - 2) + 1;
     }
   }
-  return best;
+  return names;
 }
 
 function buildYouTubeChallengeSolver(playerJS) {
   var text = String(playerJS || "");
-  var transformFn = findYouTubeURLTransformFunction(text);
-  if (!transformFn) return null;
+  var transformFns = findYouTubeURLTransformFunctions(text);
+  if (!transformFns.length) return null;
 
   var marker = ";})(_yt_player);";
   var markerIndex = text.lastIndexOf(marker);
@@ -891,19 +941,33 @@ function buildYouTubeChallengeSolver(playerJS) {
   }
   if (markerIndex < 0) return null;
 
+  // A wrong candidate throws or returns something that is not a URL object;
+  // the first candidate that answers everything asked wins.
+  var candidates = [];
+  for (var ti = 0; ti < transformFns.length; ti++) {
+    candidates.push(
+      "function(a,b,c){return " + transformFns[ti] + "(a,b,c)}",
+    );
+  }
   var injection =
     ';(function(){var root=typeof globalThis!=="undefined"?globalThis:this;' +
-    "root.__mornyeYtChallengeSolver=function(sig,n){var result={};" +
-    "var url=" +
-    transformFn +
-    '("https://www.youtube.com/watch?v=yt-dlp-wins","s",sig?encodeURIComponent(sig):void 0);' +
+    "var fns=[" +
+    candidates.join(",") +
+    "];" +
+    "root.__mornyeYtChallengeSolver=function(sig,n){var last;" +
+    "for(var f=0;f<fns.length;f++){try{var result={};" +
+    'var url=fns[f]("https://www.youtube.com/watch?v=yt-dlp-wins","s",sig?encodeURIComponent(sig):void 0);' +
+    'if(!url||typeof url.set!=="function"||typeof url.get!=="function")continue;' +
     'if(n){url.set("n",n);var proto=Object.getPrototypeOf(url);var names=Object.getOwnPropertyNames(proto);' +
     "for(var i=0;i<names.length;i++){var name=names[i];" +
     'if(name==="constructor"||name==="set"||name==="get"||name==="clone")continue;' +
     'if(typeof url[name]!=="function")continue;' +
     "try{url[name](url);break}catch(e){try{url[name]();break}catch(e2){}}}}" +
     'if(sig)result.sig=decodeURIComponent(url.get("s")||url.get("sig")||url.get("signature")||"");' +
-    'if(n)result.n=url.get("n")||"";return result};})();';
+    'if(n)result.n=url.get("n")||"";' +
+    "if((sig&&!result.sig)||(n&&!result.n))continue;" +
+    "return result}catch(e){last=e}}" +
+    "if(last)throw last;return {}};})();";
 
   var root = getGlobalRoot();
   var previous = {};
@@ -1045,6 +1109,87 @@ function buildYouTubeFormatURL(fmt, playerUrl) {
   }
 }
 
+var MAX_PREROLL_WAIT_MS = 90 * 1000;
+
+function instreamAdOf(renderingContent) {
+  return (renderingContent && renderingContent.instreamVideoAdRenderer) || null;
+}
+
+// YouTube answers a media URL with HTTP 403 until the ad placed before the
+// song could have been watched or skipped, counted from the player request.
+// The wait is read from the player response the way yt-dlp reads it: every
+// ad that plays before the content adds its skip time, or its whole length
+// when it cannot be skipped.
+function prerollWaitMs(playerResponse) {
+  var response = playerResponse || {};
+  var ads = [];
+  var placements = response.adPlacements || [];
+  for (var pi = 0; pi < placements.length; pi++) {
+    var placement = placements[pi] && placements[pi].adPlacementRenderer;
+    var config = placement && placement.config;
+    var kind = config && config.adPlacementConfig && config.adPlacementConfig.kind;
+    if (kind !== "AD_PLACEMENT_KIND_START") continue;
+    var placed = instreamAdOf(placement.renderer);
+    if (placed) ads.push(placed);
+  }
+  var slots = response.adSlots || [];
+  for (var si = 0; si < slots.length; si++) {
+    var slot = slots[si] && slots[si].adSlotRenderer;
+    var metadata = slot && slot.adSlotMetadata;
+    if (!metadata || metadata.triggerEvent !== "SLOT_TRIGGER_EVENT_BEFORE_CONTENT")
+      continue;
+    var layout =
+      slot.fulfillmentContent &&
+      slot.fulfillmentContent.fulfilledLayout &&
+      slot.fulfillmentContent.fulfilledLayout.playerBytesAdLayoutRenderer;
+    var content = layout && layout.renderingContent;
+    if (!content) continue;
+    var single = instreamAdOf(content);
+    if (single) ads.push(single);
+    var sequence =
+      content.playerBytesSequentialLayoutRenderer &&
+      content.playerBytesSequentialLayoutRenderer.sequentialLayouts;
+    for (var li = 0; li < (sequence || []).length; li++) {
+      var inner = sequence[li] && sequence[li].playerBytesAdLayoutRenderer;
+      var sequenced = instreamAdOf(inner && inner.renderingContent);
+      if (sequenced) ads.push(sequenced);
+    }
+  }
+
+  var waitMs = 0;
+  for (var ai = 0; ai < ads.length; ai++) {
+    var skipMs = Number(ads[ai].skipOffsetMilliseconds);
+    if (isFinite(skipMs) && ads[ai].skipOffsetMilliseconds != null) {
+      waitMs += Math.max(0, skipMs);
+      continue;
+    }
+    var seconds = Number(
+      parseQueryString(String(ads[ai].playerVars || "")).length_seconds,
+    );
+    if (isFinite(seconds) && seconds > 0) waitMs += seconds * 1000;
+  }
+  // One second over, as the server counts from when it answered.
+  return waitMs > 0 ? Math.min(waitMs + 1000, MAX_PREROLL_WAIT_MS) : 0;
+}
+
+// False when the download was cancelled while waiting.
+function waitUntilAvailable(candidate) {
+  var remaining = Number((candidate && candidate.availableAt) || 0) - now();
+  if (remaining <= 0) return true;
+  L(
+    "info",
+    "[YTMusic] Waiting " + Math.ceil(remaining / 1000) + "s for the ad before",
+    candidate.clientName,
+  );
+  if (typeof utils === "undefined" || !utils || typeof utils.sleep !== "function")
+    return true;
+  while (remaining > 0) {
+    if (utils.sleep(Math.min(remaining, 250)) === false) return false;
+    remaining = candidate.availableAt - now();
+  }
+  return true;
+}
+
 function _tryInnerTubeClient(videoID, clientConfig, pageInfo, options) {
   options = options || {};
   pageInfo = pageInfo || {};
@@ -1122,6 +1267,7 @@ function _tryInnerTubeClient(videoID, clientConfig, pageInfo, options) {
   if (!sd) return { error: "no streamingData" };
 
   var formats = (sd.formats || []).concat(sd.adaptiveFormats || []);
+  var availableAt = now() + prerollWaitMs(data);
   var gvsPoToken = getGvsPoToken(
     videoID,
     clientConfig,
@@ -1147,6 +1293,7 @@ function _tryInnerTubeClient(videoID, clientConfig, pageInfo, options) {
       contentLength: bestAudio.contentLength || "",
       bitrate: bestAudio.averageBitrate || bestAudio.bitrate || 0,
       clientName: clientConfig.name,
+      availableAt: availableAt,
       needsGvsPoToken:
         clientConfig.requiresGvsPoToken && isGvsPoTokenRequiredFormat(bestAudio),
       poTokenUsed: !!gvsPoToken,
@@ -1668,6 +1815,9 @@ function isDownloadAuthFailure(result) {
 }
 
 function attemptDirectCandidateDownload(candidate, outputPath, youtubeURL) {
+  if (!waitUntilAvailable(candidate)) {
+    return { path: outputPath, result: { success: false, error: "cancelled" } };
+  }
   return downloadAudioURL(
     candidate.url,
     outputPath,
@@ -3679,7 +3829,11 @@ function extractVideoId(url) {
     var u = new URL(url);
     if (u.searchParams.has("v")) return u.searchParams.get("v");
     if (u.hostname === "youtu.be") return u.pathname.slice(1).split("/")[0];
-    return null;
+    // Shorts, live and embedded links keep the id in the path.
+    var inPath = String(u.pathname || "").match(
+      /^\/(?:shorts|live|embed|v)\/([A-Za-z0-9_-]{6,})/,
+    );
+    return inPath ? inPath[1] : null;
   } catch (e) {
     return null;
   }
