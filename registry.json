@@ -250,10 +250,10 @@
       "id": "beatport",
       "name": "beatport",
       "display_name": "Beatport",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "description": "Beatport track, artist and release search, artist discographies, and original FLAC or AAC 256 kbps downloads.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/beatport.sflx",
-      "sha256": "9615df3a05a404b2ad353611d23432350f79d2bdcf1b6a351a6b324e210e6464",
+      "sha256": "7fba6952241cd3b03e115297771953d77889e0c322780a0357e0d3a08956dcb3",
       "category": "download",
       "tags": [
         "beatport",
@@ -262,7 +262,7 @@
         "metadata"
       ],
       "downloads": 0,
-      "updated_at": "2026-11-01T00:00:00Z",
+      "updated_at": "2026-11-16T00:00:00Z",
       "min_app_version": "5.3.0"
     },
     {
