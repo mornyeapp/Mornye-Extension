@@ -2,7 +2,10 @@ var CONFIG = {
   apiBaseURL: "https://tidal.com/v1",
   resourceBaseURL: "https://resources.tidal.com",
   downloadAPIURL: "/dl/tid",
-  publicToken: "49YxDN9a2aFV6RTG",
+  publicToken: "CzET4vdadNUFQ5JU",
+  // TIDAL's public web tokens. It can close an endpoint for one of them:
+  // search has answered "A user is required" for 49Yx... since 2026-11-18.
+  publicTokens: ["CzET4vdadNUFQ5JU", "49YxDN9a2aFV6RTG"],
   countryCode: "US",
   locale: "en_US",
   deviceType: "BROWSER",
@@ -229,12 +232,21 @@ function albumArtistNames(track) {
   return String(track.artist && track.artist.name || "").trim();
 }
 
-function requestHeaders() {
+function requestHeaders(token) {
   return {
     "Accept": "application/json",
     "User-Agent": requestUserAgent(),
-    "x-tidal-token": CONFIG.publicToken
+    "x-tidal-token": token || CONFIG.publicToken
   };
+}
+
+// The token in use first, then the other known ones.
+function publicTokenOrder() {
+  var tokens = [CONFIG.publicToken];
+  for (var i = 0; i < CONFIG.publicTokens.length; i++) {
+    if (tokens.indexOf(CONFIG.publicTokens[i]) < 0) tokens.push(CONFIG.publicTokens[i]);
+  }
+  return tokens;
 }
 
 function mergeHeaders(base, extra) {
@@ -282,15 +294,26 @@ function buildMetadataURL(path, extraQuery) {
   return CONFIG.apiBaseURL + "/" + normalizedPath + separator + query.join("&");
 }
 
+// A token TIDAL refuses with 401 gives way to the next one, and the token
+// that answered is used from then on.
 function getJSON(url) {
-  var response = http.get(url, requestHeaders());
-  if (!response || response.error) {
-    throw new Error(response && response.error ? response.error : "request failed");
+  var tokens = publicTokenOrder();
+  var response = null;
+  for (var i = 0; i < tokens.length; i++) {
+    response = http.get(url, requestHeaders(tokens[i]));
+    if (!response || response.error) {
+      throw new Error(response && response.error ? response.error : "request failed");
+    }
+    if (response.statusCode === 200) {
+      if (CONFIG.publicToken !== tokens[i]) {
+        log.info("[TidalWeb] Public token " + (i + 1) + " of " + tokens.length + " answered; using it from now on");
+        CONFIG.publicToken = tokens[i];
+      }
+      return JSON.parse(response.body);
+    }
+    if (response.statusCode !== 401) break;
   }
-  if (response.statusCode !== 200) {
-    throw new Error("HTTP " + response.statusCode + " for " + url);
-  }
-  return JSON.parse(response.body);
+  throw new Error("HTTP " + response.statusCode + " for " + url);
 }
 
 function postJSON(url, body, headers) {
