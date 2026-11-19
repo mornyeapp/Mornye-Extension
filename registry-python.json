@@ -6,10 +6,10 @@
       "id": "utilities",
       "name": "utilities",
       "display_name": "Mornye Utilities (Python)",
-      "version": "1.1.6",
+      "version": "1.1.8",
       "description": "For Mornye-Python only: Spotify/Tidal metadata, browser solver and signed-session utility modules (Python runtime).",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/utilities.sflx",
-      "sha256": "df4272c135f6125c0fd84fc50ece934008ea451b19f9c9988e45eb5812b55eb4",
+      "sha256": "6b6cb717386d4e326f9108bc565418e614fa343477c3d77f58c831b4b9eb8ff9",
       "category": "utility",
       "tags": [
         "python",
@@ -20,7 +20,7 @@
         "signed-session"
       ],
       "downloads": 0,
-      "updated_at": "2026-11-07T00:00:00Z"
+      "updated_at": "2026-11-18T00:00:00Z"
     }
   ]
 }
