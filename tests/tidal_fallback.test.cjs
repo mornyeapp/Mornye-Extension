@@ -63,6 +63,16 @@ test('the Python utilities Atmos 502 response falls back without retrying Atmos'
   assert.deepEqual(app.sleeps, []);
 });
 
+test('Atmos with host fallback off stops instead of downloading stereo FLAC', () => {
+  const app = load(({ body }) => body.endpoint === 'manifests'
+    ? { statusCode: 502, status: 502, error: 'Dolby Atmos unavailable (HTTP 502 Bad Gateway)',
+        code: 'ATMOS_UNAVAILABLE', retryable: false, retryMode: 'none' }
+    : flac());
+  assert.throws(() => app.context.fetchDownloadInfo('123456', 'DOLBY_ATMOS', {}, false));
+  assert.deepEqual(app.qualities(), ['DOLBY_ATMOS']);
+  assert.deepEqual(app.sleeps, []);
+});
+
 test('confirmed missing Atmos and hi-res tries CD FLAC', () => {
   const app = load(({ body }) => body.quality === 'LOSSLESS' ? flac('LOSSLESS')
     : { error: 'Requested quality unavailable', code: 'QUALITY_UNAVAILABLE', retryable: false, retryMode: 'none' });

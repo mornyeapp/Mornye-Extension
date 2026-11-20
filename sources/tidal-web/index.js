@@ -1003,9 +1003,12 @@ function satisfiesQuality(downloadInfo, quality) {
   return true;
 }
 
-function buildFallbackQualities(quality) {
+function buildFallbackQualities(quality, allowFallback) {
   var normalized = normalizeDownloadQuality(quality);
   if (normalized === "DOLBY_ATMOS") {
+    // With the host's quality fallback off, a stereo file is useless: the
+    // host deletes it and asks the next provider anyway. Stop at Atmos.
+    if (allowFallback === false) return ["DOLBY_ATMOS"];
     return ["DOLBY_ATMOS", "HI_RES_LOSSLESS", "LOSSLESS"];
   }
   if (normalized === "HI_RES_LOSSLESS") {
@@ -1216,8 +1219,8 @@ function tryMirrorDownloadInfo(trackID, quality, candidate, attempt, rejectedCan
   return null;
 }
 
-function fetchDownloadInfo(trackID, quality, rejectedCandidates) {
-  var fallbacks = buildFallbackQualities(quality);
+function fetchDownloadInfo(trackID, quality, rejectedCandidates, allowFallback) {
+  var fallbacks = buildFallbackQualities(quality, allowFallback);
   var allErrors = [];
   var maxRetries = CONFIG.maxDownloadAttempts;
   var hasMirrors = !!(CONFIG.mirrorBaseURLs && CONFIG.mirrorBaseURLs.length);
@@ -2698,7 +2701,7 @@ function download(trackID, quality, outputPath, onProgress, options) {
     var refreshedExpiredStream = false;
 
     for (var attempt = 0; attempt < maxTransfers; attempt++) {
-      downloadInfo = fetchDownloadInfo(trackID, downloadQuality, rejectedCandidates);
+      downloadInfo = fetchDownloadInfo(trackID, downloadQuality, rejectedCandidates, options.allowFallback);
       actualOutputPath = ensureOutputExtension(
         outputPath,
         inferOutputExtension(downloadInfo, downloadQuality)
