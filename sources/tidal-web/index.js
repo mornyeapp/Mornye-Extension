@@ -6,6 +6,18 @@ var CONFIG = {
   // TIDAL's public web tokens. It can close an endpoint for one of them:
   // search has answered "A user is required" for 49Yx... since 2026-11-18.
   publicTokens: ["CzET4vdadNUFQ5JU", "49YxDN9a2aFV6RTG"],
+  // The public client TIDAL's own web app uses for visitors who are not
+  // signed in. Since 2026-11-20 search no longer answers the x-tidal-token
+  // header, only the access token this client is given.
+  authTokenURL: "https://auth.tidal.com/v1/oauth2/token",
+  webClientID: "txNoH4kkV41MfH25",
+  webClientKey: "dQjy0MinCEvxi1O4UmxvxWnDjt4cgHBPw8ll6nYBk98=",
+  // Where that client is read from again once TIDAL refuses the one above,
+  // and how long to wait before reading it another time.
+  webAppURL: "https://desktop.tidal.com/",
+  webClientLookupIntervalMs: 6 * 60 * 60 * 1000,
+  webClientRetryMs: 10 * 60 * 1000,
+  webClientMaxScripts: 6,
   countryCode: "US",
   locale: "en_US",
   deviceType: "BROWSER",
@@ -91,6 +103,7 @@ function initialize(settings) {
 
 function cleanup() {
   METADATA_CACHE.clear();
+  WEB_SESSION.token = "";
   return true;
 }
 
@@ -294,11 +307,246 @@ function buildMetadataURL(path, extraQuery) {
   return CONFIG.apiBaseURL + "/" + normalizedPath + separator + query.join("&");
 }
 
-// A token TIDAL refuses with 401 gives way to the next one, and the token
-// that answered is used from then on.
-function getJSON(url) {
-  var tokens = publicTokenOrder();
+// The access token of the signed-out web session, and the kinds of
+// endpoint ("search", "tracks", ...) that answer it and no public token.
+var WEB_SESSION = {
+  token: "",
+  expiresAt: 0,
+  kinds: { search: true },
+  client: null
+};
+var WEB_CLIENT_STORAGE_KEY = "webClient";
+
+function endpointKind(url) {
+  var match = /\/v1\/([^/?]+)/.exec(String(url || ""));
+  return match ? match[1] : "";
+}
+
+function validWebClient(id, key) {
+  return /^[A-Za-z0-9]{12,40}$/.test(String(id || "")) &&
+    /^[A-Za-z0-9+\/=_-]{20,120}$/.test(String(key || ""));
+}
+
+// The client in use: the one read from the web app earlier, or the built-in
+// one. A saved client of an older version's built-in one is dropped.
+function webClient() {
+  if (WEB_SESSION.client) return WEB_SESSION.client;
+  var client = { id: CONFIG.webClientID, key: CONFIG.webClientKey, lookedAt: 0 };
+  try {
+    var saved = typeof storage !== "undefined" ? storage.get(WEB_CLIENT_STORAGE_KEY) : null;
+    if (typeof saved === "string") saved = JSON.parse(saved);
+    if (saved && saved.base === CONFIG.webClientID) {
+      client.lookedAt = Number(saved.lookedAt) || 0;
+      if (validWebClient(saved.id, saved.key)) {
+        client.id = String(saved.id);
+        client.key = String(saved.key);
+      }
+    }
+  } catch (e) {}
+  WEB_SESSION.client = client;
+  return client;
+}
+
+function saveWebClient(client) {
+  try {
+    if (typeof storage === "undefined") return;
+    storage.set(WEB_CLIENT_STORAGE_KEY, {
+      base: CONFIG.webClientID,
+      id: client.id,
+      key: client.key,
+      lookedAt: client.lookedAt
+    });
+  } catch (e) {}
+}
+
+// The production client the web app requests visitor tokens with, as its
+// script declares it: [id, {authType: clientCredentials, env: PROD, publicKey}].
+function parseWebClient(script) {
+  var text = String(script || "");
+  var entry = /\[\s*([A-Za-z_$][\w$]*|[`"'][^`"']+[`"'])\s*,\s*\{([^{}]*)\}\s*\]/g;
+  var from = 0;
+  while (true) {
+    var at = text.indexOf("clientCredentials", from);
+    if (at < 0) return null;
+    from = at + 1;
+    var start = Math.max(0, at - 120);
+    var part = text.slice(start, at + 300);
+    entry.lastIndex = 0;
+    var match;
+    while ((match = entry.exec(part))) {
+      var fields = match[2];
+      if (fields.indexOf("clientCredentials") < 0 || !/[`"']PROD[`"']/.test(fields)) continue;
+      var key = /publicKey\s*:\s*[`"']([^`"']+)[`"']/.exec(fields);
+      var id = match[1];
+      if (/^[`"']/.test(id)) {
+        id = id.slice(1, -1);
+      } else {
+        // A name: the id is the string that name is given nearest to here,
+        // as a minified script uses a name again elsewhere.
+        var named = new RegExp("(?:^|[^\\w$])" + id.replace(/\$/g, "\\$") +
+          "\\s*=\\s*[`\"']([^`\"']+)[`\"']", "g");
+        var nearest = -1;
+        var given;
+        id = "";
+        while ((given = named.exec(text))) {
+          var distance = Math.abs(given.index - at);
+          if (nearest >= 0 && distance >= nearest) continue;
+          nearest = distance;
+          id = given[1];
+        }
+      }
+      if (key && validWebClient(id, key[1])) return { id: id, key: key[1] };
+    }
+  }
+}
+
+function webAppText(url) {
+  var response = http.get(url, { "Accept": "*/*", "User-Agent": requestUserAgent() });
+  if (!response || response.error || response.statusCode !== 200) return "";
+  return String(response.body || "");
+}
+
+// Reads the client out of the scripts the web app's page loads.
+function lookUpWebClient() {
+  var origin = /^https:\/\/[^/]+/.exec(CONFIG.webAppURL)[0];
+  var page = webAppText(CONFIG.webAppURL);
+  if (!page) throw new Error("the web app did not answer");
+  var scripts = [];
+  var link = /(?:src|href)\s*=\s*["']([^"']+\.js)(?:\?[^"']*)?["']/g;
+  var match;
+  while ((match = link.exec(page))) {
+    var url = match[1];
+    if (url.charAt(0) === "/" && url.charAt(1) !== "/") url = origin + url;
+    else if (!/^[a-z]+:|^\/\//i.test(url)) url = CONFIG.webAppURL + url;
+    if (url.indexOf(origin + "/") !== 0 || scripts.indexOf(url) >= 0) continue;
+    // The app's own script holds the client; libraries are read after it.
+    if (/\/index[^/]*$/.test(url)) scripts.unshift(url);
+    else scripts.push(url);
+  }
+  for (var i = 0; i < scripts.length && i < CONFIG.webClientMaxScripts; i++) {
+    var client = parseWebClient(webAppText(scripts[i]));
+    if (client) return client;
+  }
+  return null;
+}
+
+function requestWebGrant(client) {
+  return http.post(
+    CONFIG.authTokenURL,
+    "client_id=" + encodeURIComponent(client.id) +
+      "&client_secret=" + encodeURIComponent(client.key) +
+      "&grant_type=client_credentials",
+    {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Accept": "application/json",
+      "User-Agent": requestUserAgent()
+    }
+  );
+}
+
+// Keeps the access token of a grant; empty when the answer holds none.
+function keepWebToken(response) {
+  if (!response || response.error || response.statusCode !== 200) return "";
+  var data;
+  try {
+    data = JSON.parse(response.body);
+  } catch (e) {
+    return "";
+  }
+  var token = String(data && data.access_token || "");
+  if (!token) return "";
+  var lifetime = Number(data.expires_in) || 3600;
+  WEB_SESSION.token = token;
+  // Renewed a minute early, so a request never leaves with a dying token.
+  WEB_SESSION.expiresAt = Date.now() + Math.max(60, lifetime - 60) * 1000;
+  return token;
+}
+
+// True when the web app uses another client by now and TIDAL gave it a
+// token, which is then the session's. The app is read at most once per
+// interval: its scripts are a few megabytes.
+function refreshWebClient() {
+  var current = webClient();
+  var now = Date.now();
+  if (current.lookedAt && Math.abs(now - current.lookedAt) < CONFIG.webClientLookupIntervalMs) {
+    return false;
+  }
+  current.lookedAt = now;
+  var found = null;
+  try {
+    found = lookUpWebClient();
+  } catch (e) {
+    log.warn("[TidalWeb] Web client lookup failed: " + e);
+    // Not read at all, as when offline: tried again after a short while.
+    current.lookedAt = now - CONFIG.webClientLookupIntervalMs + CONFIG.webClientRetryMs;
+  }
+  var changed = !!found && (found.id !== current.id || found.key !== current.key);
+  // A client is taken over only once it has proven itself with a token.
+  if (changed && keepWebToken(requestWebGrant(found))) {
+    log.info("[TidalWeb] TIDAL's web app uses another client now; using it from now on");
+    current.id = found.id;
+    current.key = found.key;
+  } else {
+    changed = false;
+  }
+  saveWebClient(current);
+  return changed;
+}
+
+// Empty when TIDAL gives none; the public tokens are then all there is.
+function webAccessToken(renew) {
+  if (!renew && WEB_SESSION.token && Date.now() < WEB_SESSION.expiresAt) {
+    return WEB_SESSION.token;
+  }
+  WEB_SESSION.token = "";
+  if (!http || typeof http.post !== "function") return "";
+  var response = requestWebGrant(webClient());
+  var token = keepWebToken(response);
+  if (token) return token;
+  // The client itself refused: the web app may have moved to another one.
+  var refused = response && !response.error &&
+    [400, 401, 403].indexOf(response.statusCode) >= 0;
+  if (refused && refreshWebClient()) return WEB_SESSION.token;
+  log.warn("[TidalWeb] No web session: " +
+    (response ? response.error || "HTTP " + response.statusCode : "request failed"));
+  return "";
+}
+
+// Null when there is no session to ask with. A 401 is asked again with a
+// new token, then with the token of the client the web app uses by now.
+function getWithWebSession(url) {
   var response = null;
+  for (var attempt = 0; attempt < 3; attempt++) {
+    if (attempt === 2 && !refreshWebClient()) break;
+    var token = attempt === 2 ? WEB_SESSION.token : webAccessToken(attempt > 0);
+    if (!token) return response;
+    response = http.get(url, {
+      "Accept": "application/json",
+      "User-Agent": requestUserAgent(),
+      "Authorization": "Bearer " + token
+    });
+    if (!response || response.error) {
+      throw new Error(response && response.error ? response.error : "request failed");
+    }
+    if (response.statusCode !== 401) break;
+  }
+  return response;
+}
+
+// A token TIDAL refuses with 401 gives way to the next one, and the token
+// that answered is used from then on. An endpoint that refuses them all is
+// asked with the web session, which is asked first from then on.
+function getJSON(url) {
+  var kind = endpointKind(url);
+  var response = null;
+  if (WEB_SESSION.kinds[kind]) {
+    response = getWithWebSession(url);
+    if (response && response.statusCode === 200) return JSON.parse(response.body);
+    if (response && response.statusCode !== 401) {
+      throw new Error("HTTP " + response.statusCode + " for " + url);
+    }
+  }
+  var tokens = publicTokenOrder();
   for (var i = 0; i < tokens.length; i++) {
     response = http.get(url, requestHeaders(tokens[i]));
     if (!response || response.error) {
@@ -312,6 +560,14 @@ function getJSON(url) {
       return JSON.parse(response.body);
     }
     if (response.statusCode !== 401) break;
+  }
+  if (response.statusCode === 401 && kind && !WEB_SESSION.kinds[kind]) {
+    var answer = getWithWebSession(url);
+    if (answer && answer.statusCode === 200) {
+      log.info("[TidalWeb] " + kind + " now needs the web session; using it from now on");
+      WEB_SESSION.kinds[kind] = true;
+      return JSON.parse(answer.body);
+    }
   }
   throw new Error("HTTP " + response.statusCode + " for " + url);
 }
