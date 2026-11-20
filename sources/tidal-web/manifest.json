@@ -1,7 +1,7 @@
 {
   "name": "tidal-web",
   "displayName": "Tidal",
-  "version": "1.2.15",
+  "version": "1.2.16",
   "description": "TIDAL metadata and search provider for Mornye using TIDAL public web endpoints.",
   "homepage": "https://github.com/zarzet/SpotiFLAC-Mobile",
   "type": [
@@ -35,6 +35,8 @@
       "www.tidal.com",
       "listen.tidal.com",
       "resources.tidal.com",
+      "auth.tidal.com",
+      "desktop.tidal.com",
       "api.zarz.moe",
       "*.audio.tidal.com",
       "*.manifest.tidal.com"
@@ -154,8 +156,8 @@
       "key": "publicToken",
       "label": "Public Web Token",
       "type": "string",
-      "default": "49YxDN9a2aFV6RTG",
-      "description": "Public TIDAL web token used for metadata/search requests."
+      "default": "CzET4vdadNUFQ5JU",
+      "description": "Public TIDAL web token used for metadata requests. Search uses TIDAL's signed-out web session."
     },
     {
       "key": "countryCode",

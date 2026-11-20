@@ -81,14 +81,24 @@
   }
   function getTrack(value) { return track(get("tracks/" + id(value))); }
   function getAlbum(value) { return album(get("releases/" + id(value))); }
+  function optionalArtistItems(path) {
+    try { return get(path); }
+    catch (e) {
+      if (e.needsVerification || e.status !== 404 || e.code !== "TRACK_UNAVAILABLE") throw e;
+      return {};
+    }
+  }
   function getArtist(value) {
     var cursor = /^artist-albums:([1-9]\d{0,14}):([1-9]\d{0,2})$/.exec(String(value));
     var aid = cursor ? id(cursor[1]) : id(value), page = cursor ? Number(cursor[2]) : 1;
-    var releases = get("artists/" + aid + "/releases?limit=20&page=" + page);
     var result = cursor ? { id: pref(aid), provider_id: PROVIDER, item_type: "artist" } : artist(get("artists/" + aid));
+    var releasePath = "artists/" + aid + "/releases?limit=20&page=" + page;
+    // A missing optional list must not discard an available artist profile.
+    // Continuation errors still reach the caller so a failed page can be retried.
+    var releases = cursor ? get(releasePath) : optionalArtistItems(releasePath);
     result.albums = (releases.releases || []).map(album);
     result.albums_next = releases.has_more && page < 100 ? "artist-albums:" + aid + ":" + (page + 1) : "";
-    if (!cursor) result.top_tracks = (get("artists/" + aid + "/tracks?limit=20&page=1").tracks || []).map(track);
+    if (!cursor) result.top_tracks = (optionalArtistItems("artists/" + aid + "/tracks?limit=20&page=1").tracks || []).map(track);
     return result;
   }
   function parseUrl(value) {

@@ -139,6 +139,30 @@ test('Apple track six falls back to Amazon catalog search without its contributo
   assert.deepEqual(queries, ['Dovein Nain (with Jatinder Shah)', 'Dovein Nain Jenny Johal']);
 });
 
+test('a plain title is also searched with its primary artist', () => {
+  const app = runtime(() => assert.fail('unexpected HTTP request'));
+  app.context.resolveAmazonURL = () => null;
+  const queries = [];
+  app.context.customSearchSync = (query, options) => {
+    assert.equal(options.filter, 'songs');
+    queries.push(query);
+    if (query === 'Signal') {
+      return [
+        { id: 'B000000011', item_type: 'track', name: 'Signal', artists: 'Another Artist', duration_ms: 180000 },
+        { id: 'B000000012', item_type: 'track', name: 'Signal', artists: 'Third Artist', duration_ms: 181000 },
+      ];
+    }
+    return query === 'Signal Lead Artist' ? [{
+      id: 'B000000013', item_type: 'track', name: 'Signal',
+      artists: 'Lead Artist, Guest Artist', duration_ms: 180500,
+    }] : [];
+  };
+  const result = app.extension.checkAvailability('USAAA2600013', 'Signal', 'Lead Artist, Guest Artist', { duration_ms: 180000 });
+  assert.equal(result.available, true);
+  assert.equal(result.track_id, 'B000000013');
+  assert.deepEqual(queries, ['Signal', 'Signal Lead Artist']);
+});
+
 test('simplifying Apple credits keeps artist, duration and recording checks', () => {
   for (const candidate of [
     { name: 'Signal (Live)', artists: 'Lead Artist', duration_ms: 180000 },

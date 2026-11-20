@@ -1,6 +1,6 @@
 # Beatport
 
-Imported from the supplied `mornye-beatport-1.0.0.zip` and updated to 1.0.1.
+Imported from the supplied `mornye-beatport-1.0.0.zip` and updated to 1.0.2.
 Requires Mornye 5.3.0, signed session features and the existing Beatport V2
 gateway at `api.zarz.moe`. Account credentials remain on that server.
 The signed identity stays `beatport@1.0.0` to retain its session scope.
@@ -14,6 +14,11 @@ Prepared media URLs are retained through ordinary network failures and pause.
 An expired or rejected capability is removed from memory and storage, and the
 download attempts one fresh resolve before returning the transfer error.
 HTTP 429 remains `rate_limited` with the server's retry delay.
+
+Artist profiles remain visible when the first release list or top tracks return
+`404 TRACK_UNAVAILABLE`. The unavailable list is empty while successful sections
+keep their metadata. Missing profiles, verification, authentication, rate limits,
+temporary service errors and failed continuation pages still propagate normally.
 
 Validation:
 

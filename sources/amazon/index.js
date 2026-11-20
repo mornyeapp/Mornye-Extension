@@ -1,5 +1,5 @@
 // Amazon Music Metadata & Download Provider for Mornye
-// v2.3.12 - Regional Home feeds with canonical catalog resolution for downloads.
+// Regional Home feeds with canonical catalog resolution for downloads.
 // Uses reverse-engineered Amazon Music web API (skill.music.a2z.com).
 
 var CONFIG = {
@@ -18,6 +18,10 @@ var CONFIG = {
   deviceModel: "WEBPLAYER",
   musicTerritory: "US"
 };
+
+// Logged so an exported log names the running package. Kept equal to
+// manifest.json by tests/amazon_session.test.cjs.
+var EXTENSION_VERSION = "2.3.19";
 
 var USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
@@ -527,7 +531,17 @@ function initSession(context) {
   _session.initialized = true;
 }
 
-function refreshSession() {
+function refreshSession(withNewCookies) {
+  // Amazon ties a session to its cookies, so a renewal that keeps them gets
+  // the same session back.
+  if (withNewCookies && typeof http !== "undefined" && http &&
+      typeof http.clearCookies === "function") {
+    try {
+      http.clearCookies();
+    } catch (e) {
+      L("warn", "[Amazon] Clearing cookies failed:", String(e));
+    }
+  }
   // Force re-fetch config.json if getting 429s
   _session.initialized = false;
   initSession();
@@ -837,12 +851,36 @@ function _doShowSearch(apiBaseURL, keyword, pageUrl, body, context) {
   }
   L("info", "[Amazon] showSearch response:", res ? res.status : "null");
   if (!res || !res.ok) return null;
+  var data;
   try {
-    return res.json();
+    data = res.json();
   } catch (e) {
     L("error", "[Amazon] showSearch JSON parse failed:", String(e));
     return null;
   }
+  if (isServiceErrorDialog(data)) {
+    L("warn", "[Amazon] showSearch returned a service error instead of results");
+    return SEARCH_SERVICE_ERROR;
+  }
+  return data;
+}
+
+// An expired session's search still answers HTTP 200, with a "Service error"
+// dialog in place of the search page. Such a search gets one retry with a new
+// session instead of showing no results.
+var SEARCH_SERVICE_ERROR = { serviceError: true };
+
+function isServiceErrorDialog(data) {
+  var methods = data && data.methods;
+  if (!methods || !methods.length) return false;
+  var dialog = false;
+  for (var i = 0; i < methods.length; i++) {
+    var template = methods[i] && methods[i].template;
+    var name = String((template && template.interface) || "");
+    if (/SearchTemplate$/.test(name)) return false;
+    if (/DialogTemplate$/.test(name)) dialog = true;
+  }
+  return dialog;
 }
 
 function callShowSearch(keyword, context, _retried) {
@@ -864,6 +902,21 @@ function callShowSearch(keyword, context, _retried) {
   });
 
   var result = _doShowSearch(CONFIG.skillBaseURL, keyword, pageUrl, body, ctx);
+  if (result === SEARCH_SERVICE_ERROR) {
+    if (!_retried) {
+      L("info", "[Amazon] showSearch service error, starting a new session and retrying...");
+      refreshSession(true);
+      sleep(CONFIG.baseBackoffMs);
+      return callShowSearch(keyword, ctx, true);
+    }
+    // Refused again with a new session: more attempts only add delay. Some
+    // regions get this for every search while album and artist links work.
+    L("warn", "[Amazon] Search refused for:", keyword);
+    var refused = new Error("amazon_search_refused");
+    refused.code = "search_refused";
+    refused.retryable = false;
+    throw refused;
+  }
   if (result) return result;
 
   if (!_retried) {
@@ -3099,11 +3152,14 @@ function resolveAmazonTrackBySearch(trackName, artistName, durationMs) {
   if (!titleKey) return null;
 
   var queries = [String(trackName || "").trim()];
-  if (strippedTitle !== queries[0]) {
-    var artistQuery = (strippedTitle + " " + (artistName || "")).trim();
-    if (queries.indexOf(artistQuery) < 0) queries.push(artistQuery);
-    if (queries.indexOf(strippedTitle) < 0) queries.push(strippedTitle);
-  }
+  // A short or common title alone can return only other artists' songs, so
+  // the title is also searched with the primary artist.
+  var primaryArtist = String(artistName || "")
+    .split(/\s*[,;]\s*|\s+(?:feat\.?|ft\.?|featuring)\s+/i)[0]
+    .trim();
+  var artistQuery = (strippedTitle + " " + primaryArtist).trim();
+  if (queries.indexOf(artistQuery) < 0) queries.push(artistQuery);
+  if (queries.indexOf(strippedTitle) < 0) queries.push(strippedTitle);
   var expectedDuration = Number(durationMs || 0);
   for (var queryIndex = 0; queryIndex < queries.length; queryIndex++) {
     var results = customSearchSync(queries[queryIndex], { filter: "songs" });
@@ -3807,7 +3863,7 @@ registerExtension({
   initialize: function(config) {
     var settings = config && config.settings ? config.settings : (config || {});
     _homeCountry = String(settings.homeCountry || "US").trim().toUpperCase();
-    L("info", "[Amazon] Extension v2.3.12 init");
+    L("info", "[Amazon] Extension v" + EXTENSION_VERSION + " init");
     initSession();
     return true;
   },
@@ -3891,7 +3947,7 @@ registerExtension({
   },
 
   download: function(trackID, quality, outputPath, onProgress, options) {
-    L("info", "[Amazon] download called:", trackID, quality, "extension: 2.3.12");
+    L("info", "[Amazon] download called:", trackID, quality, "extension: " + EXTENSION_VERSION);
 
     // trackID bisa berupa:
     // - ASIN langsung (dari handleUrl/getAlbum flow, atau checkAvailability)

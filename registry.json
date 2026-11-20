@@ -25,10 +25,10 @@
       "id": "amazon",
       "name": "amazon",
       "display_name": "Amazon Music",
-      "version": "2.3.16",
+      "version": "2.3.19",
       "description": "Amazon Music metadata and downloads with per-track Dolby Atmos tags when provided by Amazon, complete release metadata, original artwork, lossless audio, and AC-4.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/amzn.sflx",
-      "sha256": "6a8c3a141a0ddf8e872fdacca09b08c880f82357034aa3d9aeba1feb37da5b75",
+      "sha256": "5177325613ad65b9475aa02e8befb651b68a324d465f04869f2906f5f59044ec",
       "category": "download",
       "tags": [
         "amazon",
@@ -38,7 +38,7 @@
         "search"
       ],
       "downloads": 0,
-      "updated_at": "2026-11-01T00:00:00Z",
+      "updated_at": "2026-11-08T00:00:00Z",
       "min_app_version": "4.9.1"
     },
     {
@@ -64,10 +64,10 @@
       "id": "soundcloud",
       "name": "soundcloud",
       "display_name": "SoundCloud",
-      "version": "1.0.14",
+      "version": "1.0.15",
       "description": "SoundCloud metadata and download provider. Search tracks, albums, playlists, artists. Downloads via direct SoundCloud streams.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/soundcloud.sflx",
-      "sha256": "1f0d062fcd604c226655104d494a5efeded60545e4db6c8c0ae10ed66656b72d",
+      "sha256": "c720fccc7f1063606724ab7436d73ee7c6cc86e8028c4d38122fb02c6a7a0f98",
       "category": "download",
       "tags": [
         "soundcloud",
@@ -76,17 +76,17 @@
         "search"
       ],
       "downloads": 0,
-      "updated_at": "2026-11-01T00:00:00Z",
+      "updated_at": "2026-11-16T00:00:00Z",
       "min_app_version": "4.9.1"
     },
     {
       "id": "ytmusic-spotiflac",
       "name": "ytmusic-spotiflac",
       "display_name": "YouTube Music",
-      "version": "2.4.6",
+      "version": "2.4.7",
       "description": "YouTube Music metadata and download provider with native album, artist, explicit, release, and song-credit metadata plus validated catalog enrichment.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/ytmusic-spotiflac.sflx",
-      "sha256": "f9e61bf9129ecf4ffa994ef7410deb3753530eea90a3edab7b65d99c9e5965aa",
+      "sha256": "bd4b3b437d3c0d3901df14b999b8feb9c88144f3fbf04f9517281eb0395f9c68",
       "icon_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/icons/ytmusic-spotiflac.jpg",
       "category": "download",
       "tags": [
@@ -98,17 +98,17 @@
         "download"
       ],
       "downloads": 0,
-      "updated_at": "2026-11-01T00:00:00Z",
+      "updated_at": "2026-11-16T00:00:00Z",
       "min_app_version": "4.5.1"
     },
     {
       "id": "deezer",
       "name": "deezer",
       "display_name": "Deezer",
-      "version": "1.3.11",
+      "version": "1.3.12",
       "description": "Deezer metadata and lossless download provider with complete release, disc, barcode, credits, explicit, genre, rights, link, and high-resolution artwork metadata.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/deezer.sflx",
-      "sha256": "298c44d77e04f5b29609eb2068153f23e418b9055c44b219ac5db9888e0e5c34",
+      "sha256": "86f3efb1068c2cc07fe197de623962e6d35c171669a732c72cb4c6be77cf43d2",
       "category": "download",
       "tags": [
         "deezer",
@@ -118,7 +118,7 @@
         "search"
       ],
       "downloads": 0,
-      "updated_at": "2026-11-06T00:00:00Z",
+      "updated_at": "2026-11-18T00:00:00Z",
       "min_app_version": "4.9.1"
     },
     {
@@ -145,10 +145,10 @@
       "id": "tidal-web",
       "name": "tidal-web",
       "display_name": "Tidal",
-      "version": "1.2.15",
+      "version": "1.2.16",
       "description": "TIDAL metadata, search, and download provider for Mornye with complete release, credits, explicit, and disc metadata from TIDAL Web.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/tidal-web.sflx",
-      "sha256": "a7aee7db05958a6f9ca70690729b5587ad4db12f857283e6f857a702bc309f5d",
+      "sha256": "138effee146460122a35107ac39fef3480134a280737d597b0351bfd4c3f8e57",
       "category": "download",
       "tags": [
         "tidal",
@@ -250,10 +250,10 @@
       "id": "beatport",
       "name": "beatport",
       "display_name": "Beatport",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "description": "Beatport track, artist and release search, artist discographies, and original FLAC or AAC 256 kbps downloads.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/beatport.sflx",
-      "sha256": "9615df3a05a404b2ad353611d23432350f79d2bdcf1b6a351a6b324e210e6464",
+      "sha256": "7fba6952241cd3b03e115297771953d77889e0c322780a0357e0d3a08956dcb3",
       "category": "download",
       "tags": [
         "beatport",
@@ -262,7 +262,7 @@
         "metadata"
       ],
       "downloads": 0,
-      "updated_at": "2026-11-01T00:00:00Z",
+      "updated_at": "2026-11-16T00:00:00Z",
       "min_app_version": "5.3.0"
     },
     {
@@ -292,10 +292,10 @@
       "id": "utilities",
       "name": "utilities",
       "display_name": "Mornye Utilities (Python)",
-      "version": "1.1.4",
+      "version": "1.1.8",
       "description": "For Mornye-Python only: Spotify/Tidal metadata, browser solver and signed-session utility modules (Python runtime).",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/utilities.sflx",
-      "sha256": "c49aff9f34997dfd518bdeecb878f2f61bb687d231380bb2bdc7e2bd690a70bc",
+      "sha256": "6b6cb717386d4e326f9108bc565418e614fa343477c3d77f58c831b4b9eb8ff9",
       "runtime": "python",
       "category": "utility",
       "tags": [
@@ -307,7 +307,7 @@
         "signed-session"
       ],
       "downloads": 0,
-      "updated_at": "2026-11-07T00:00:00Z"
+      "updated_at": "2026-11-18T00:00:00Z"
     }
   ]
 }

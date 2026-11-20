@@ -42,6 +42,55 @@ test('artist details, top tracks and opaque continuation retrieve the next relea
  const artist = r.extension.getArtist('beatport:537125'); assert.equal(artist.name, 'Beave'); assert.equal(artist.top_tracks.length, 1);
  assert.equal(artist.albums_next, 'artist-albums:537125:2'); r.extension.getArtist(artist.albums_next); assert.equal(r.calls.at(-1).body.page, 2);
 });
+
+for (const missing of ['artist-releases', 'artist-tracks', 'both']) test('artist profile survives unavailable ' + missing, () => {
+ const r = runtime(({ body }) => {
+  if (body.action === missing || missing === 'both' && body.action !== 'artist')
+   return { statusCode: 404, body: '{"code":"TRACK_UNAVAILABLE","error":"TRACK_UNAVAILABLE"}' };
+  if (body.action === 'artist-releases') return { releases: [{ id: '7506773', name: 'Release' }], has_more: true };
+  if (body.action === 'artist-tracks') return { tracks: [raw] };
+  return { id: '537125', name: 'Beave', image: 'https://geo-media.beatport.com/a.jpg', description: 'Artist biography' };
+ });
+ const value = r.extension.handleUrl('https://www.beatport.com/artist/beave/537125').artist;
+ assert.equal(value.id, 'beatport:537125'); assert.equal(value.name, 'Beave'); assert.equal(value.description, 'Artist biography');
+ assert.equal(value.image_url, 'https://geo-media.beatport.com/a.jpg');
+ const missingReleases = missing !== 'artist-tracks', missingTracks = missing !== 'artist-releases';
+ assert.equal(value.albums.length, missingReleases ? 0 : 1);
+ assert.equal(value.albums_next, missingReleases ? '' : 'artist-albums:537125:2');
+ assert.equal(value.top_tracks.length, missingTracks ? 0 : 1);
+ if (!missingTracks) assert.equal(value.top_tracks[0].isrc, raw.isrc);
+});
+
+test('unavailable artist profile remains an error instead of an empty successful page', () => {
+ const r = runtime(({ body }) => body.action === 'artist'
+  ? { statusCode: 404, body: '{"code":"TRACK_UNAVAILABLE","error":"TRACK_UNAVAILABLE"}' }
+  : body.action === 'artist-releases' ? { releases: [] } : { tracks: [] });
+ assert.throws(() => r.extension.getArtist('537125'), error => error.code === 'TRACK_UNAVAILABLE' && error.status === 404);
+});
+
+for (const action of ['artist-releases', 'artist-tracks']) test(action + ' preserves verification, authentication and temporary errors', () => {
+ for (const [status, code, verify] of [
+  [428, 'VERIFICATION_REQUIRED', true], [401, 'SESSION_INVALID', false], [403, 'FORBIDDEN', false],
+  [429, 'RATE_LIMITED', false], [503, 'PROVIDER_BUSY', false], [404, 'NOT_FOUND', false],
+  [404, 'TRACK_UNAVAILABLE', true],
+ ]) {
+  const r = runtime(({ body }) => body.action === action
+   ? { statusCode: status, needsVerification: verify, body: JSON.stringify({ code, error: code }) }
+   : body.action === 'artist' ? { id: '537125', name: 'Beave' }
+   : body.action === 'artist-releases' ? { releases: [] } : { tracks: [] });
+  assert.throws(() => r.extension.getArtist('537125'), error => error.code === code && error.status === status && error.needsVerification === verify);
+ }
+});
+
+test('unavailable release continuation remains retryable by the caller', () => {
+ const r = runtime(({ body }) => body.action === 'artist-releases'
+  ? body.page === 2 ? { statusCode: 404, body: '{"code":"TRACK_UNAVAILABLE","error":"TRACK_UNAVAILABLE"}' }
+   : { releases: [{ id: '7506773', name: 'Release' }], has_more: true }
+  : body.action === 'artist' ? { id: '537125', name: 'Beave' } : { tracks: [] });
+ const value = r.extension.getArtist('537125');
+ assert.throws(() => r.extension.getArtist(value.albums_next), error => error.code === 'TRACK_UNAVAILABLE');
+ assert.equal(value.albums.length, 1); assert.equal(value.albums_next, 'artist-albums:537125:2');
+});
 test('URL handler rejects lookalikes and routes track, artist and release URLs', () => {
  const r = runtime(({ body }) => body.action === 'release' ? { id: '7506773', name: 'Zoolander', tracks: [raw] } : raw);
  assert.equal(r.extension.handleUrl('https://www.beatport.com/track/zoolander/30759768').track.isrc, raw.isrc);
