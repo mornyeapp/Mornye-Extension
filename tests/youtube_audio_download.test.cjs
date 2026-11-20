@@ -334,3 +334,56 @@ test('JS clients send the current player timestamp and share the player cache', 
   assert.equal(scripts, 1);
   assert.equal(requests, 2);
 });
+
+test('M4A as the preferred format is taken first, with Opus as its fallback', () => {
+  const { c, calls, extension } = runtime();
+  extension.initialize({ preferredFormat: 'm4a' });
+  assert.equal(c.chooseYouTubeFormat([audio(251, 'opus'), audio(140, 'aac')], {}, false).itag, 140);
+  assert.equal(c.chooseYouTubeFormat([audio(251, 'opus')], {}, false).itag, 251);
+
+  // M4A from a later client wins over earlier Opus.
+  c.INNERTUBE_CLIENTS = [{ name: 'first' }, { name: 'second' }];
+  c._tryInnerTubeClient = (_, client) => client.name === 'first'
+    ? { clientName: 'first', itag: 251, extension: '.opus', url: 'https://media.example.test/opus' }
+    : { clientName: 'second', itag: 140, extension: '.m4a', url: 'https://media.example.test/aac' };
+  const result = c.tryInnerTubeDownloadsLazily('id', {}, '/music/song.flac', '', '');
+  assert.equal(result.audio_codec, 'aac');
+  assert.deepEqual(calls.downloads.map(d => d.output), ['/music/song.m4a']);
+});
+
+test('an unknown preferred format keeps Opus first', () => {
+  const { c, extension } = runtime();
+  extension.initialize({ preferredFormat: 'flac' });
+  assert.equal(c.chooseYouTubeFormat([audio(140, 'aac'), audio(251, 'opus')], {}, false).itag, 251);
+});
+
+test('a video file is the last resort, behind audio in the other format', () => {
+  for (const preferredFormat of ['opus', 'm4a']) {
+    const { c, calls, extension } = runtime();
+    extension.initialize({ preferredFormat });
+    const other = preferredFormat === 'opus'
+      ? { itag: 140, extension: '.m4a', mimeType: 'audio/mp4; codecs="mp4a.40.2"' }
+      : { itag: 251, extension: '.opus', mimeType: 'audio/webm; codecs="opus"' };
+    c.INNERTUBE_CLIENTS = [{ name: 'first' }, { name: 'second' }];
+    c._tryInnerTubeClient = (_, client) => client.name === 'first'
+      ? { clientName: 'first', itag: 18, extension: '.m4a', mimeType: 'video/mp4; codecs="avc1.42001E, mp4a.40.2"',
+        url: 'https://media.example.test/video' }
+      : { clientName: 'second', ...other, url: 'https://media.example.test/audio' };
+    c.tryInnerTubeDownloadsLazily('id', {}, '/music/song.flac', '', '');
+    assert.deepEqual(calls.downloads.map(d => d.url), ['https://media.example.test/audio'], preferredFormat);
+  }
+});
+
+test('a song from another catalog is matched against search rows', () => {
+  const { c, extension } = runtime();
+  // Search rows carry title, artist and a length in seconds.
+  c.performSearchSync = () => [
+    { id: 'cover000001', item_type: 'track', title: 'Signal', artist: 'Cover Band', duration: 200 },
+    { id: 'video000001', item_type: 'track', title: 'Signal', artist: 'Lead Artist', duration: 201 },
+  ];
+  const found = extension.checkAvailability('', 'Signal', 'Lead Artist', { duration_ms: 200000 });
+  assert.equal(found.available, true);
+  assert.equal(found.track_id, 'video000001');
+  assert.equal(extension.checkAvailability('', 'Signal', 'Lead Artist', { duration_ms: 100000 }).available, false);
+  assert.equal(extension.checkAvailability('', 'Signal', 'Someone Else', {}).available, false);
+});

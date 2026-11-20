@@ -1,7 +1,7 @@
 {
   "name": "ytmusic-spotiflac",
   "displayName": "YouTube Music",
-  "version": "2.4.7",
+  "version": "2.4.8",
   "description": "YouTube Music metadata and download provider with native album, artist, explicit, release, and song-credit metadata plus validated catalog enrichment.",
   "type": ["metadata_provider", "download_provider"],
   "icon": "icon.jpg",
@@ -102,6 +102,14 @@
         "CA"
       ],
       "description": "Country used for Home recommendations. No VPN is required."
+    },
+    {
+      "key": "preferredFormat",
+      "label": "Preferred format",
+      "type": "select",
+      "default": "opus",
+      "options": ["opus", "m4a"],
+      "description": "The audio format to download first. A song that does not have it is downloaded in the other one."
     },
     {
       "key": "poTokenMode",

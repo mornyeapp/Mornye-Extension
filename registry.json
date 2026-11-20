@@ -83,10 +83,10 @@
       "id": "ytmusic-spotiflac",
       "name": "ytmusic-spotiflac",
       "display_name": "YouTube Music",
-      "version": "2.4.7",
+      "version": "2.4.8",
       "description": "YouTube Music metadata and download provider with native album, artist, explicit, release, and song-credit metadata plus validated catalog enrichment.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/ytmusic-spotiflac.sflx",
-      "sha256": "bd4b3b437d3c0d3901df14b999b8feb9c88144f3fbf04f9517281eb0395f9c68",
+      "sha256": "40b10518b9d4408b7ffea3a20dfc17bf10551b6199fcdee26dcd05d931191125",
       "icon_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/icons/ytmusic-spotiflac.jpg",
       "category": "download",
       "tags": [
@@ -98,7 +98,7 @@
         "download"
       ],
       "downloads": 0,
-      "updated_at": "2026-11-16T00:00:00Z",
+      "updated_at": "2026-11-20T00:00:00Z",
       "min_app_version": "4.5.1"
     },
     {
