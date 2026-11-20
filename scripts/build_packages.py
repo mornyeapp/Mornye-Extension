@@ -10,8 +10,6 @@ from pathlib import Path
 from urllib.parse import urlparse
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile, ZipInfo
 
-from build_unified_registry import synchronize
-
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -85,10 +83,6 @@ def main():
     if changed:
         registry["updated_at"] = timestamp
         registry_path.write_text(json.dumps(registry, indent=2, ensure_ascii=False) + "\n")
-    try:
-        synchronize(check=args.check)
-    except ValueError as error:
-        parser.exit(1, str(error) + "\n")
 
 
 if __name__ == "__main__":

@@ -29,12 +29,16 @@ class RegistryPackagesTest(unittest.TestCase):
                     if "runtime" in entry:
                         self.assertEqual(entry["runtime"], manifest.get("runtime", "javascript"))
 
-    def test_default_registry_stays_compatible_with_javascript_only_apps(self):
+    def test_registry_json_marks_every_non_javascript_package(self):
+        # Apps with mornyeapp/Mornye#846 hide entries whose runtime is not
+        # JavaScript; an unmarked Python package would be offered and fail.
         for entry in json.loads((ROOT / "registry.json").read_text())["extensions"]:
             package = ROOT / "extensions" / Path(urlparse(entry["download_url"]).path).name
             with self.subTest(extension=entry["id"]), ZipFile(package) as archive:
                 manifest = json.loads(archive.read("manifest.json"))
-                self.assertEqual(manifest.get("runtime", "javascript"), "javascript")
+                self.assertEqual(
+                    entry.get("runtime", "javascript"), manifest.get("runtime", "javascript")
+                )
 
     def test_packaged_python_modules_have_valid_syntax(self):
         for package in sorted((ROOT / "extensions").glob("*.sflx")):
