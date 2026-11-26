@@ -16,12 +16,15 @@ var CONFIG = {
   appVersion: "1.0.9678.0",
   deviceFamily: "WebPlayer",
   deviceModel: "WEBPLAYER",
-  musicTerritory: "US"
+  musicTerritory: "US",
+  // A user-hosted amazon-music compatible API server, tried before Zarz.
+  customEndpoint: "",
+  customEndpointApiKey: ""
 };
 
 // Logged so an exported log names the running package. Kept equal to
 // manifest.json by tests/amazon_session.test.cjs.
-var EXTENSION_VERSION = "2.3.19";
+var EXTENSION_VERSION = "2.3.20";
 
 var USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
@@ -3564,6 +3567,83 @@ function callZarzMedia(asin, codec, operation) {
   };
 }
 
+// ==================== Self-hosted amazon-music API ====================
+
+// Keeps the scheme the user typed: the host app allows plain HTTP only for a
+// host granted by a "grantsNetwork" setting.
+function normalizeCustomEndpoint(value) {
+  var text = String(value || "").trim();
+  if (!/^https?:\/\/[^\/?#]+/i.test(text)) return "";
+  return text.replace(/[?#].*$/, "").replace(/\/+$/, "");
+}
+
+// Quality names the amazon-music server's selector understands. It applies
+// its own fallback order (Max -> Master -> High -> ...) when one is missing.
+function customEndpointQuality(codec) {
+  switch (codec) {
+    case "opus": return "Normal";
+    case "eac3": return "Atmos_EC-3";
+    case "ac4": return "Atmos_AC-4";
+    default: return "Max";
+  }
+}
+
+function customEndpointHeaders() {
+  var headers = { "Accept": "application/json", "Content-Type": "application/json" };
+  if (CONFIG.customEndpointApiKey) headers["Authorization"] = "Bearer " + CONFIG.customEndpointApiKey;
+  return headers;
+}
+
+function customEndpointData(response, path) {
+  if (!response || response.error) {
+    throw new Error("custom endpoint: " + (response && response.error ? response.error : "request failed") + " for " + path);
+  }
+  if (response.statusCode !== 200) {
+    throw new Error("custom endpoint: HTTP " + response.statusCode + " for " + path);
+  }
+  var payload = JSON.parse(response.body || "null");
+  if (!payload || payload.success === false || payload.data == null) {
+    throw new Error("custom endpoint: empty answer for " + path);
+  }
+  return payload.data;
+}
+
+// The Widevine key comes back as hex, sometimes as "kid:key".
+function customEndpointKey(value) {
+  var text = String(value || "").trim();
+  if (text.indexOf(":") >= 0) text = text.split(":").pop().trim();
+  return /^[0-9a-fA-F]{32}$/.test(text) ? text.toLowerCase() : "";
+}
+
+// GET {endpoint}/tracks/{asin}/streams/{quality}, then POST {endpoint}/widevine/key
+// with the stream's PSSH, as served by amazon-music's API server.
+function callCustomMedia(asin, codec) {
+  var base = CONFIG.customEndpoint;
+  var path = "/tracks/" + encodeURIComponent(asin) + "/streams/" + encodeURIComponent(customEndpointQuality(codec));
+  L("info", "[Amazon] Calling custom endpoint for ASIN:", asin, "codec:", codec);
+  var selected = customEndpointData(http.get(base + path, customEndpointHeaders()), path);
+  var stream = selected && selected.stream;
+  if (!stream || !stream.base_url) throw new Error("custom endpoint: no stream for " + asin);
+  var key = "";
+  if (stream.pssh) {
+    var keyData = customEndpointData(
+      http.post(base + "/widevine/key", JSON.stringify({ pssh: stream.pssh }), customEndpointHeaders()),
+      "/widevine/key"
+    );
+    key = customEndpointKey(keyData && keyData.key);
+    if (!key) throw new Error("custom endpoint: no usable decryption key for " + asin);
+  }
+  return {
+    streamUrl: stream.base_url,
+    decryptionKey: key,
+    codec: normalizeAudioCodec(stream.codecs || codec),
+    sampleRate: Number(stream.audio_sampling_rate || 0),
+    bitDepth: Number(stream.bit_depth || 0),
+    meta: null,
+    coverUrl: ""
+  };
+}
+
 // ==================== Home Feed ====================
 
 function extractNextPageToken(data) {
@@ -3863,6 +3943,8 @@ registerExtension({
   initialize: function(config) {
     var settings = config && config.settings ? config.settings : (config || {});
     _homeCountry = String(settings.homeCountry || "US").trim().toUpperCase();
+    CONFIG.customEndpoint = normalizeCustomEndpoint(settings.customEndpoint);
+    CONFIG.customEndpointApiKey = String(settings.customEndpointApiKey || "").trim();
     L("info", "[Amazon] Extension v" + EXTENSION_VERSION + " init");
     initSession();
     return true;
@@ -4021,80 +4103,103 @@ registerExtension({
         return callZarzMedia(asin, codec, operation);
       }
     };
-    try {
-      try {
-        apiResult = fetchWithRetry(requestMedia, true);
-      } catch (codecError) {
-        if (codec === "flac" || !isAmazonUnavailable(codecError)) throw codecError;
-        if (codec === "ac4") throw codecError; // Never substitute stereo for an explicit Atmos request.
-        L("info", "[Amazon] Codec", codec, "unavailable for ASIN:", asin, ": falling back to FLAC");
-        codec = "flac";
-        operation = {};
-        apiResult = fetchWithRetry(requestMedia, true);
-      }
-    } catch (apiError) {
-      var message = String(apiError && apiError.message || apiError);
-      var errorCode = String(apiError && apiError.code || "").toUpperCase();
-      var errorType = isAmazonUnavailable(apiError) ? "not_found" : "api_error";
-      if (errorCode === "RESOLUTION_TIMEOUT") errorType = "timeout";
-      else if (errorCode === "CANCELLED" || /download cancelled/i.test(message)) errorType = "cancelled";
-      else if (apiError && apiError.needsVerification) errorType = "verification_required";
-      else if (Number(apiError && apiError.statusCode || 0) === 429 || /RATE_LIMIT/.test(errorCode)) errorType = "rate_limited";
-      else if (errorCode === "PROVIDER_AUTH_FAILED") errorType = "authentication_error";
-      return {
-        success: false,
-        error_message: message,
-        error_type: errorType,
-        retry_after_seconds: Math.ceil(Number(apiError && apiError.retryAfterMs || 0) / 1000),
-        auth_url: apiError && apiError.authUrl || ""
-      };
-    }
-
-    if (apiResult && apiResult.needsVerification) {
-      return {
-        success: false,
-        error_message: "Verification required",
-        error_type: "verification_required",
-        auth_url: apiResult.authUrl || ""
-      };
-    }
-
-    if (!apiResult) {
-      return { success: false, error_message: "Download API failed for ASIN: " + asin, error_type: "api_error" };
-    }
-
-    var actualCodec = normalizeAudioCodec(apiResult.codec || codec);
-    var outputExt = "";
-    if (actualCodec === "ac4") {
-      outputExt = ".mp4";
-    } else if (actualCodec === "eac3" || actualCodec === "opus") {
-      outputExt = ".m4a";
-    }
-
-    L("info", "[Amazon] Got stream URL, downloading to:", outputPath);
-    var actualOutputPath = outputPath;
-    if (outputExt || apiResult.decryptionKey) {
-      actualOutputPath = outputPath.replace(/\.[^.]+$/, outputExt || ".m4a");
-      L("info", "[Amazon] Stream container path:", actualOutputPath);
-    }
-
-    if (onProgress) {
-      try { onProgress(5); } catch (e) {}
-    }
-
-    var downloadResult = file.download(apiResult.streamUrl, actualOutputPath, {
-      headers: { "User-Agent": getRandomUA() },
-      onProgress: function(written, total) {
-        if (onProgress && total > 0) {
-          var percent = Math.min(95, Math.floor((written / total) * 95) + 5);
-          try { onProgress(percent); } catch (e) {}
+    // The custom endpoint goes first; a failed lookup or transfer from it
+    // falls back to the default API once.
+    var useCustom = !!CONFIG.customEndpoint;
+    var downloadResult, actualCodec, outputExt, actualOutputPath;
+    while (true) {
+      apiResult = null;
+      if (useCustom) {
+        try {
+          apiResult = callCustomMedia(asin, codec);
+        } catch (customError) {
+          L("warn", "[Amazon] Custom endpoint failed, using the default API:", String(customError && customError.message || customError));
+          useCustom = false;
         }
       }
-    });
+      if (!apiResult) try {
+        try {
+          apiResult = fetchWithRetry(requestMedia, true);
+        } catch (codecError) {
+          if (codec === "flac" || !isAmazonUnavailable(codecError)) throw codecError;
+          if (codec === "ac4") throw codecError; // Never substitute stereo for an explicit Atmos request.
+          L("info", "[Amazon] Codec", codec, "unavailable for ASIN:", asin, ": falling back to FLAC");
+          codec = "flac";
+          operation = {};
+          apiResult = fetchWithRetry(requestMedia, true);
+        }
+      } catch (apiError) {
+        var message = String(apiError && apiError.message || apiError);
+        var errorCode = String(apiError && apiError.code || "").toUpperCase();
+        var errorType = isAmazonUnavailable(apiError) ? "not_found" : "api_error";
+        if (errorCode === "RESOLUTION_TIMEOUT") errorType = "timeout";
+        else if (errorCode === "CANCELLED" || /download cancelled/i.test(message)) errorType = "cancelled";
+        else if (apiError && apiError.needsVerification) errorType = "verification_required";
+        else if (Number(apiError && apiError.statusCode || 0) === 429 || /RATE_LIMIT/.test(errorCode)) errorType = "rate_limited";
+        else if (errorCode === "PROVIDER_AUTH_FAILED") errorType = "authentication_error";
+        return {
+          success: false,
+          error_message: message,
+          error_type: errorType,
+          retry_after_seconds: Math.ceil(Number(apiError && apiError.retryAfterMs || 0) / 1000),
+          auth_url: apiError && apiError.authUrl || ""
+        };
+      }
 
-    if (!downloadResult || !downloadResult.success) {
-      var errMsg = downloadResult ? downloadResult.error : "file.download returned null";
-      return { success: false, error_message: "Failed to download file: " + errMsg, error_type: "download_error" };
+      if (apiResult && apiResult.needsVerification) {
+        return {
+          success: false,
+          error_message: "Verification required",
+          error_type: "verification_required",
+          auth_url: apiResult.authUrl || ""
+        };
+      }
+
+      if (!apiResult) {
+        return { success: false, error_message: "Download API failed for ASIN: " + asin, error_type: "api_error" };
+      }
+
+      actualCodec = normalizeAudioCodec(apiResult.codec || codec);
+      outputExt = "";
+      if (actualCodec === "ac4") {
+        outputExt = ".mp4";
+      } else if (actualCodec === "eac3" || actualCodec === "opus") {
+        outputExt = ".m4a";
+      }
+
+      L("info", "[Amazon] Got stream URL, downloading to:", outputPath);
+      actualOutputPath = outputPath;
+      if (outputExt || apiResult.decryptionKey) {
+        actualOutputPath = outputPath.replace(/\.[^.]+$/, outputExt || ".m4a");
+        L("info", "[Amazon] Stream container path:", actualOutputPath);
+      }
+
+      if (onProgress) {
+        try { onProgress(5); } catch (e) {}
+      }
+
+      downloadResult = file.download(apiResult.streamUrl, actualOutputPath, {
+        headers: { "User-Agent": getRandomUA() },
+        onProgress: function(written, total) {
+          if (onProgress && total > 0) {
+            var percent = Math.min(95, Math.floor((written / total) * 95) + 5);
+            try { onProgress(percent); } catch (e) {}
+          }
+        }
+      });
+
+      if (!downloadResult || !downloadResult.success) {
+        var errMsg = downloadResult ? downloadResult.error : "file.download returned null";
+        var cancelled = downloadResult && downloadResult.error_type === "cancelled" ||
+          (utils && typeof utils.isDownloadCancelled === "function" && utils.isDownloadCancelled());
+        if (useCustom && !cancelled) {
+          L("warn", "[Amazon] Custom endpoint transfer failed, using the default API:", String(errMsg));
+          useCustom = false;
+          continue;
+        }
+        return { success: false, error_message: "Failed to download file: " + errMsg, error_type: "download_error" };
+      }
+      break;
     }
 
     if (onProgress) {
