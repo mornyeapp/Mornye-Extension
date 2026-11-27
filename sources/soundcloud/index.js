@@ -474,6 +474,27 @@ function fetchPlaylistOrAlbum(playlistId) {
   return { info: info, tracks: tracks };
 }
 
+// The app asks for more albums by passing albums_next back to getArtist.
+var ARTIST_ALBUMS_CURSOR = /^artist-albums:([1-9]\d{0,19}):([A-Za-z0-9%._~-]{1,512})$/;
+
+function fetchArtistAlbums(userId, offset) {
+  var data = scGet("users/" + userId + "/albums", "limit=50" + (offset ? "&offset=" + offset : ""));
+  var items = (data && data.collection) || data || [];
+  var albums = [];
+  if (Array.isArray(items)) {
+    for (var i = 0; i < items.length; i++) {
+      var albumInfo = formatPlaylistOrAlbum(items[i]);
+      if (albumInfo) albums.push(albumInfo);
+    }
+  }
+  // next_href carries the offset as-is, already URL-encoded.
+  var next = /[?&]offset=([A-Za-z0-9%._~-]{1,512})(?:[&#]|$)/.exec(String((data && data.next_href) || ""));
+  return {
+    albums: albums,
+    next: next && items.length ? "artist-albums:" + userId + ":" + next[1] : ""
+  };
+}
+
 function fetchArtist(userId) {
   log.info("[SC] Fetching artist:", userId);
   var userData = scGet("users/" + userId);
@@ -508,17 +529,13 @@ function fetchArtist(userId) {
     }
   }
 
-  // Fetch albums
+  // Fetch the first page of albums; the app asks for the rest.
   var albums = [];
+  var albumsNext = "";
   try {
-    var albumData = scGet("users/" + userId + "/albums", "limit=50");
-    var albumItems = albumData.collection || albumData || [];
-    if (Array.isArray(albumItems)) {
-      for (var a = 0; a < albumItems.length; a++) {
-        var albumInfo = formatPlaylistOrAlbum(albumItems[a]);
-        if (albumInfo) albums.push(albumInfo);
-      }
-    }
+    var albumPage = fetchArtistAlbums(userId, "");
+    albums = albumPage.albums;
+    albumsNext = albumPage.next;
   } catch (e) {
     log.debug("[SC] Albums fetch failed:", e.message);
   }
@@ -531,6 +548,7 @@ function fetchArtist(userId) {
       image_url: artistInfo.image_url,
       listeners: artistInfo.listeners,
       albums: albums,
+      albums_next: albumsNext,
       top_tracks: topTracks,
       provider_id: "soundcloud"
     }
@@ -1356,6 +1374,18 @@ function getPlaylist(playlistId) {
 }
 
 function getArtist(artistId) {
+  var cursor = ARTIST_ALBUMS_CURSOR.exec(String(artistId || ""));
+  if (cursor) {
+    // Errors reach the app here, so a failed later page can be retried.
+    var page = fetchArtistAlbums(cursor[1], cursor[2]);
+    return {
+      id: cursor[1],
+      item_type: "artist",
+      albums: page.albums,
+      albums_next: page.next,
+      provider_id: "soundcloud"
+    };
+  }
   try {
     var result = fetchArtist(artistId);
     return result.artist;
