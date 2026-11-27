@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-11-26T00:00:00Z",
+  "updated_at": "2026-11-27T00:00:00Z",
   "extensions": [
     {
       "id": "spotify-web",
@@ -38,7 +38,7 @@
         "search"
       ],
       "downloads": 0,
-      "updated_at": "2026-11-26T00:00:00Z",
+      "updated_at": "2026-11-27T00:00:00Z",
       "min_app_version": "4.9.1"
     },
     {
@@ -83,10 +83,10 @@
       "id": "ytmusic-spotiflac",
       "name": "ytmusic-spotiflac",
       "display_name": "YouTube Music",
-      "version": "2.4.7",
+      "version": "2.4.8",
       "description": "YouTube Music metadata and download provider with native album, artist, explicit, release, and song-credit metadata plus validated catalog enrichment.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/ytmusic-spotiflac.sflx",
-      "sha256": "bd4b3b437d3c0d3901df14b999b8feb9c88144f3fbf04f9517281eb0395f9c68",
+      "sha256": "40b10518b9d4408b7ffea3a20dfc17bf10551b6199fcdee26dcd05d931191125",
       "icon_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/icons/ytmusic-spotiflac.jpg",
       "category": "download",
       "tags": [
@@ -98,17 +98,17 @@
         "download"
       ],
       "downloads": 0,
-      "updated_at": "2026-11-16T00:00:00Z",
+      "updated_at": "2026-11-20T00:00:00Z",
       "min_app_version": "4.5.1"
     },
     {
       "id": "deezer",
       "name": "deezer",
       "display_name": "Deezer",
-      "version": "1.3.11",
+      "version": "1.3.12",
       "description": "Deezer metadata and lossless download provider with complete release, disc, barcode, credits, explicit, genre, rights, link, and high-resolution artwork metadata.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/deezer.sflx",
-      "sha256": "298c44d77e04f5b29609eb2068153f23e418b9055c44b219ac5db9888e0e5c34",
+      "sha256": "86f3efb1068c2cc07fe197de623962e6d35c171669a732c72cb4c6be77cf43d2",
       "category": "download",
       "tags": [
         "deezer",
@@ -118,7 +118,7 @@
         "search"
       ],
       "downloads": 0,
-      "updated_at": "2026-11-06T00:00:00Z",
+      "updated_at": "2026-11-18T00:00:00Z",
       "min_app_version": "4.9.1"
     },
     {
@@ -145,10 +145,10 @@
       "id": "tidal-web",
       "name": "tidal-web",
       "display_name": "Tidal",
-      "version": "1.2.14",
+      "version": "1.2.17",
       "description": "TIDAL metadata, search, and download provider for Mornye with complete release, credits, explicit, and disc metadata from TIDAL Web.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/tidal-web.sflx",
-      "sha256": "0f23f034b2f38e72d07abccb974eb7d39cf409c5659735e5745380ffe2816094",
+      "sha256": "fcd7a0ca4dda3dacd688c6962db218f89dd165d5449c640e71a0b1bf24847cce",
       "category": "download",
       "tags": [
         "tidal",
@@ -158,7 +158,7 @@
         "search"
       ],
       "downloads": 0,
-      "updated_at": "2026-11-07T00:00:00Z",
+      "updated_at": "2026-11-20T00:00:00Z",
       "min_app_version": "4.9.0"
     },
     {

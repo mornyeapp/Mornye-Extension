@@ -7,7 +7,10 @@ var CONFIG = {
   blowfishSecret: "g4el58wc0zvf9na1",
   blowfishIVHex: "0001020304050607",
   chunkSize: 2048,
-  maxCollectionTracks: 200,
+  maxCollectionTracks: 5000,
+  maxPlaylistChars: 6600000,
+  collectionPageSize: 500,
+  collectionTimeBudgetMs: 20000,
   maxArtistAlbums: 100,
   maxArtistTopTracks: 20,
   coverMaxSize: 1400,
@@ -486,16 +489,34 @@ function safeGatewayCall(method, body) {
   }
 }
 
-function collectPaginatedItems(container, limit) {
+// transform, when given, replaces each item as its page arrives (a null result
+// is left out), so a long list does not hold every page Deezer sent. The host
+// ends a call after 30 seconds and gives the extension 64 MiB: a list Deezer
+// serves too slowly, or one whose items pass maxChars as JSON, stops early and
+// keeps what it has.
+function collectPaginatedItems(container, limit, transform, maxChars) {
   var items = [];
   var nextURL = "";
   var source = container;
   var remaining = typeof limit === "number" && limit > 0 ? limit : 0;
+  var startedAt = nowMs();
+  var seen = 0;
+  var chars = 0;
 
   while (source) {
     var pageItems = source.data || [];
     for (var i = 0; i < pageItems.length; i++) {
-      items.push(pageItems[i]);
+      var item = transform ? transform(pageItems[i], seen) : pageItems[i];
+      seen++;
+      if (transform && !item) continue;
+      if (maxChars > 0) {
+        chars += JSON.stringify(item).length;
+        if (chars > maxChars) {
+          log.warn("[DeezerExt] List stopped at " + items.length + " items: too large for the app to hold");
+          return items;
+        }
+      }
+      items.push(item);
       if (remaining > 0 && items.length >= remaining) {
         return items;
       }
@@ -503,6 +524,10 @@ function collectPaginatedItems(container, limit) {
 
     nextURL = source.next || "";
     if (!nextURL) break;
+    if (nowMs() - startedAt > CONFIG.collectionTimeBudgetMs) {
+      log.warn("[DeezerExt] List stopped at " + items.length + " items: Deezer answered too slowly");
+      break;
+    }
     source = deezerGet(nextURL);
   }
 
@@ -535,10 +560,6 @@ function fetchArtistAlbums(artistID) {
 function fetchArtistTopTracks(artistID) {
   var result = deezerGet("/artist/" + encodeURIComponent(artistID) + "/top?limit=" + CONFIG.maxArtistTopTracks);
   return collectPaginatedItems(result, CONFIG.maxArtistTopTracks);
-}
-
-function fetchCollectionTracks(container) {
-  return collectPaginatedItems(container, CONFIG.maxCollectionTracks);
 }
 
 function fetchAlbumTracks(albumData) {
@@ -878,24 +899,37 @@ function fetchPlaylist(playlistID) {
 
   var playlistData = fetchPlaylistData(rawID);
   var playlistInfo = formatPlaylist(playlistData);
-  var trackItems = fetchCollectionTracks(playlistData.tracks || {});
-  var tracks = [];
-
-  for (var i = 0; i < trackItems.length; i++) {
-    var formatted = formatTrack(trackItems[i], {
-      album: trackItems[i].album,
-      albumName: trackItems[i].album && trackItems[i].album.title ? trackItems[i].album.title : "",
-      albumArtist: trackItems[i].artist && trackItems[i].artist.name ? trackItems[i].artist.name : "",
-      albumID: trackItems[i].album && trackItems[i].album.id ? withPrefix(trackItems[i].album.id) : "",
-      artistID: trackItems[i].artist && trackItems[i].artist.id ? withPrefix(trackItems[i].artist.id) : "",
-      coverURL: coverFromAlbum(trackItems[i].album) || playlistInfo.cover_url,
-      trackNumber: i + 1
-    });
-    if (formatted) tracks.push(formatted);
-  }
-
-  playlistInfo.tracks = tracks;
+  // A long playlist needs the memory the cache holds.
+  if (Number(playlistData.nb_tracks || 0) > 1000) metadataCache.clear();
+  playlistInfo.tracks = collectPaginatedItems(
+    playlistTrackPages(playlistData, rawID),
+    CONFIG.maxCollectionTracks,
+    function (item, index) {
+      return formatTrack(item, {
+        album: item.album,
+        albumName: item.album && item.album.title ? item.album.title : "",
+        albumArtist: item.artist && item.artist.name ? item.artist.name : "",
+        albumID: item.album && item.album.id ? withPrefix(item.album.id) : "",
+        artistID: item.artist && item.artist.id ? withPrefix(item.artist.id) : "",
+        coverURL: coverFromAlbum(item.album) || playlistInfo.cover_url,
+        trackNumber: index + 1
+      });
+    },
+    CONFIG.maxPlaylistChars
+  );
   return playlistInfo;
+}
+
+// Deezer puts only the first 400 songs inside a playlist and no link to the
+// rest, which the tracks endpoint serves from any position in the same order.
+function playlistTrackPages(playlistData, rawID) {
+  var container = playlistData.tracks || {};
+  var loaded = (container.data || []).length;
+  if (container.next || loaded >= Number(playlistData.nb_tracks || 0)) return container;
+  return {
+    data: container.data || [],
+    next: "/playlist/" + encodeURIComponent(rawID) + "/tracks?limit=" + CONFIG.collectionPageSize + "&index=" + loaded
+  };
 }
 
 function resolveURLTarget(url) {

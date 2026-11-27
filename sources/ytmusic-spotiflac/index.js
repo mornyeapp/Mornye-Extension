@@ -18,6 +18,8 @@ const CONFIG = {
   poTokenProviderURL: "",
   manualGvsPoToken: "",
   logLevel: "warn",
+  // "opus" or "m4a": downloaded first, the other when a song lacks it.
+  preferredFormat: "opus",
   homeCountry: "ID",
   poTokenFallbackTtlMs: 6 * 60 * 60 * 1000,
   // InnerTube ANDROID client config
@@ -469,7 +471,22 @@ var INNERTUBE_CLIENTS = [
   },
 ];
 
-var YOUTUBE_AUDIO_FORMAT_PREFERENCE = [251, 250, 249, 140, 139, 600, 599, 18];
+var YOUTUBE_OPUS_ITAGS = [251, 250, 249];
+var YOUTUBE_M4A_ITAGS = [140, 139];
+
+// The listener's format first, then the other one, then the low-bitrate
+// and video formats.
+function youtubeFormatPreference() {
+  var m4a = CONFIG.preferredFormat === "m4a";
+  return (m4a ? YOUTUBE_M4A_ITAGS : YOUTUBE_OPUS_ITAGS).concat(
+    m4a ? YOUTUBE_OPUS_ITAGS : YOUTUBE_M4A_ITAGS,
+    [600, 599, 18],
+  );
+}
+
+function preferredAudioExtension() {
+  return CONFIG.preferredFormat === "m4a" ? ".m4a" : ".opus";
+}
 
 function parseMimeCodec(mimeType) {
   var text = String(mimeType || "");
@@ -514,11 +531,12 @@ function scoreYouTubeFormat(fmt, clientConfig, hasGvsPoToken) {
     return -1;
   }
   var itag = Number(fmt.itag || 0);
-  var prefIndex = YOUTUBE_AUDIO_FORMAT_PREFERENCE.indexOf(itag);
+  var prefIndex = youtubeFormatPreference().indexOf(itag);
   var score = prefIndex >= 0 ? 1000 - prefIndex * 50 : 0;
   var mimeType = String(fmt.mimeType || "").toLowerCase();
   if (mimeType.indexOf("audio/") === 0) score += 100;
-  if (mimeType.indexOf("opus") >= 0) score += 25;
+  if (outputExtensionFromYouTubeFormat(fmt) === preferredAudioExtension())
+    score += 25;
   score += Math.min(Number(fmt.averageBitrate || fmt.bitrate || 0) / 1000, 300);
   return score;
 }
@@ -527,8 +545,9 @@ function chooseYouTubeFormat(formats, clientConfig, hasGvsPoToken) {
   var best = null;
   var bestScore = -1;
 
-  for (var pi = 0; pi < YOUTUBE_AUDIO_FORMAT_PREFERENCE.length; pi++) {
-    var wanted = YOUTUBE_AUDIO_FORMAT_PREFERENCE[pi];
+  var preference = youtubeFormatPreference();
+  for (var pi = 0; pi < preference.length; pi++) {
+    var wanted = preference[pi];
     for (var fi = 0; fi < formats.length; fi++) {
       var fmt = formats[fi];
       if (
@@ -1421,6 +1440,7 @@ function tryInnerTubeDownloadsLazily(
   coverURL,
 ) {
   var deferred = [];
+  var videos = [];
   for (var ci = 0; ci < INNERTUBE_CLIENTS.length; ci++) {
     var client = INNERTUBE_CLIENTS[ci];
     L(
@@ -1447,7 +1467,13 @@ function tryInnerTubeDownloadsLazily(
     var candidates = [candidate].concat(candidate.alternatives || []);
     for (var fi = 0; fi < candidates.length; fi++) {
       var next = candidates[fi];
-      if (next.extension !== ".opus") {
+      // The other format waits until every client was asked for this one.
+      // A video file, whose sound is M4A too, waits behind all audio.
+      if (String(next.mimeType || "").toLowerCase().indexOf("video/") === 0) {
+        videos.push(next);
+        continue;
+      }
+      if (next.extension !== preferredAudioExtension()) {
         deferred.push(next);
         continue;
       }
@@ -1463,6 +1489,7 @@ function tryInnerTubeDownloadsLazily(
     }
   }
 
+  deferred = deferred.concat(videos);
   for (var di = 0; di < deferred.length; di++) {
     var fallback = tryInnerTubeCandidateDownload(
       deferred[di],
@@ -1473,7 +1500,11 @@ function tryInnerTubeDownloadsLazily(
       coverURL,
     );
     if (fallback) {
-      L("warn", "[YTMusic] Direct Opus unavailable; using", fallback.audio_codec);
+      L(
+        "warn",
+        "[YTMusic] Direct " + preferredAudioExtension() + " unavailable; using",
+        fallback.audio_codec,
+      );
       return fallback;
     }
   }
@@ -6089,6 +6120,14 @@ registerExtension({
     CONFIG.logLevel = normalizeLogLevel(
       readSetting(settings, "logLevel", CONFIG.logLevel),
     );
+    var preferredFormat = String(
+      readSetting(settings, "preferredFormat", CONFIG.preferredFormat) || "",
+    )
+      .trim()
+      .toLowerCase();
+    if (preferredFormat === "opus" || preferredFormat === "m4a") {
+      CONFIG.preferredFormat = preferredFormat;
+    }
     L("info", "YouTube Music extension init", {
       poTokenMode: CONFIG.poTokenMode,
       hasProvider: !!CONFIG.poTokenProviderURL,
@@ -6152,9 +6191,16 @@ registerExtension({
         var results = performSearchSync(queries[queryIndex], YT_SEARCH_PARAMS.tracks) || [];
         for (var i = 0; i < results.length; i++) {
           var item = results[i];
+          // Search rows name the artist and length their own way.
+          var candidate = item && {
+            name: item.name || item.title,
+            artists: item.artists || item.artist,
+            duration_ms: Number(item.duration_ms || 0) ||
+              (Number(item.duration || 0) || 0) * 1000,
+          };
           if (item && item.id && (item.item_type === "track" || item.type === "track") &&
-              downloadRecordingMatches(trackName, artistName, durationMs, item)) {
-            L("info", "[YTMusic] Found verified track:", item.id, item.name || item.title);
+              downloadRecordingMatches(trackName, artistName, durationMs, candidate)) {
+            L("info", "[YTMusic] Found verified track:", item.id, candidate.name);
             return { available: true, track_id: item.id };
           }
         }
