@@ -28,7 +28,7 @@
       "version": "2.3.20",
       "description": "Amazon Music metadata and downloads with per-track Dolby Atmos tags when provided by Amazon, complete release metadata, original artwork, lossless audio, and AC-4.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/amzn.sflx",
-      "sha256": "117b6bb8d649844e24edc01211ed8ba2909e4498fdcc7d11cd90b5a67a4bb03e",
+      "sha256": "454551ddbd7c26388185257190185529f60c3350be3ed0a1d0d5d7d9b119c2af",
       "category": "download",
       "tags": [
         "amazon",

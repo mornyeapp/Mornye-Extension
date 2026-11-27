@@ -66,7 +66,8 @@ still used if it fails. `tidal-web` expects a server compatible with
 expects one compatible with
 [amazon-music](https://github.com/AmineSoukara/amazon-music)
 (`/tracks/{asin}/streams/{quality}` and `POST /widevine/key`, with the
-server's session JWT sent as `Authorization: Bearer`). The setting
+server's session JWT sent as `Authorization: Bearer` over HTTPS). If a token
+is set with an HTTP endpoint, Amazon downloads use the default API. The setting
 uses `"grantsNetwork": true`, so the app allows the host typed in it; a server
 on a home network also needs Allow Local Network Access.
 

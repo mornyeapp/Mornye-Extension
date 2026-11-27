@@ -57,16 +57,16 @@ function load({ get, post, signed = () => zarzAudio, transfer } = {}) {
 
 test('amazon uses the custom amazon-music endpoint with the Bearer token', () => {
   const app = load({ get: () => customStream(), post: () => customKey(KEY) });
-  app.init({ customEndpoint: ' http://192.168.1.20:8000/ ', customEndpointApiKey: ' jwt ' });
+  app.init({ customEndpoint: ' https://amz.example.test/ ', customEndpointApiKey: ' jwt ' });
   const result = app.download('best');
   assert.equal(result.success, true);
   assert.equal(result.decryption_key, KEY);
   assert.equal(result.decryption.strategy, 'ffmpeg.mov_key');
   assert.equal(result.bit_depth, 24);
   assert.equal(result.sample_rate, 192000);
-  assert.equal(app.gets[0].url, 'http://192.168.1.20:8000/tracks/B000000001/streams/Max');
+  assert.equal(app.gets[0].url, 'https://amz.example.test/tracks/B000000001/streams/Max');
   assert.equal(app.gets[0].headers.Authorization, 'Bearer jwt');
-  assert.equal(app.posts[0].url, 'http://192.168.1.20:8000/widevine/key');
+  assert.equal(app.posts[0].url, 'https://amz.example.test/widevine/key');
   assert.deepEqual(JSON.parse(app.posts[0].body), { pssh: 'AAAApssh' });
   assert.deepEqual(app.transfers, ['https://offline.invalid/custom.mp4']);
   assert.equal(app.signedCalls.length, 0);
@@ -127,4 +127,79 @@ test('amazon declares the custom endpoint settings', () => {
   const byKey = Object.fromEntries(manifest.settings.map(s => [s.key, s]));
   assert.equal(byKey.customEndpoint.grantsNetwork, true);
   assert.equal(byKey.customEndpointApiKey.secret, true);
+});
+
+test('HTTP custom endpoints are used only without a session token', () => {
+  const app = load({ get: () => customStream(), post: () => customKey(KEY) });
+  const endpoint = 'http://192.168.1.20:8000';
+  app.init({ customEndpoint: endpoint, customEndpointApiKey: 'secret' });
+  assert.equal(app.download().success, true);
+  assert.equal(app.gets.length, 0);
+  assert.equal(app.posts.length, 0);
+  assert.equal(app.signedCalls.length, 1);
+  assert.equal(app.signedCalls[0].headers.Authorization, undefined);
+  app.init({ customEndpoint: endpoint });
+  assert.equal(app.download().success, true);
+  assert.equal(app.gets.length, 1);
+  assert.equal(app.gets[0].headers.Authorization, undefined);
+  assert.equal(app.posts[0].headers.Authorization, undefined);
+});
+
+test('AC-4 uses the default provider when the custom codec is stereo or unknown', () => {
+  for (const codec of ['flac', '']) {
+    const app = load({
+      get: () => customStream(codec),
+      signed: () => ok({ audio: { url: 'https://offline.invalid/atmos.mp4', codec: 'ac4' } }),
+    });
+    app.init({ customEndpoint: 'https://amz.example.test' });
+    const result = app.download('ac4');
+    assert.equal(result.audio_codec, 'ac4');
+    assert.equal(app.signedCalls.length, 1);
+    assert.equal(app.signedCalls[0].body.codec, 'ac4');
+    assert.equal(app.posts.length, 0);
+    assert.deepEqual(app.transfers, ['https://offline.invalid/atmos.mp4']);
+  }
+});
+
+test('AC-4 reports unavailable when neither provider confirms the codec', () => {
+  for (const codec of ['flac', undefined]) {
+    const app = load({
+      get: () => customStream('flac'),
+      signed: () => ok({ audio: { url: 'https://offline.invalid/default', codec } }),
+    });
+    app.init({ customEndpoint: 'https://amz.example.test' });
+    assert.equal(app.download('ac4').error_type, 'not_found');
+    assert.deepEqual(app.transfers, []);
+  }
+});
+
+for (const reason of ['cancelled', 'timeout']) {
+  test('custom requests stop on ' + reason + ' before and between network calls', () => {
+    for (const stage of ['start', 'lookup', 'transfer']) {
+      let stopped = stage === 'start';
+      const app = load({
+        get() { stopped = stage === 'lookup'; return customStream(); },
+        post() { stopped = stage === 'transfer'; return customKey(KEY); },
+      });
+      app.init({ customEndpoint: 'https://amz.example.test' });
+      app.context.utils.isDownloadCancelled = () => stopped && reason === 'cancelled';
+      app.context.utils.getResolutionRemainingMs = () => stopped && reason === 'timeout' ? 0 : 1000;
+      assert.equal(app.download().error_type, reason, stage);
+      assert.equal(app.gets.length, stage === 'start' ? 0 : 1);
+      assert.equal(app.posts.length, stage === 'transfer' ? 1 : 0);
+      assert.equal(app.signedCalls.length, 0);
+      assert.deepEqual(app.transfers, []);
+    }
+  });
+}
+
+test('a cancelled custom transfer keeps its error type and skips fallback', () => {
+  const app = load({
+    get: () => customStream(), post: () => customKey(KEY),
+    transfer: () => ({ success: false, error: 'download cancelled', error_type: 'cancelled' }),
+  });
+  app.init({ customEndpoint: 'https://amz.example.test' });
+  assert.equal(app.download().error_type, 'cancelled');
+  assert.equal(app.signedCalls.length, 0);
+  assert.equal(app.transfers.length, 1);
 });
