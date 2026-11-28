@@ -24,7 +24,7 @@ var CONFIG = {
 
 // Logged so an exported log names the running package. Kept equal to
 // manifest.json by tests/amazon_session.test.cjs.
-var EXTENSION_VERSION = "2.3.20";
+var EXTENSION_VERSION = "2.3.21";
 
 var USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
