@@ -1274,10 +1274,11 @@ function isCDLosslessInfo(downloadInfo) {
   return false;
 }
 
-function satisfiesQuality(downloadInfo, quality) {
+function satisfiesQuality(downloadInfo, quality, strict) {
   var normalized = normalizeDownloadQuality(quality);
   if (normalized === "DOLBY_ATMOS") return isDolbyAtmosInfo(downloadInfo);
-  if (normalized === "HI_RES_LOSSLESS") return isLosslessInfo(downloadInfo);
+  // Strict: a 16-bit FLAC does not satisfy a hi-res request.
+  if (normalized === "HI_RES_LOSSLESS") return strict ? isHiResInfo(downloadInfo) : isLosslessInfo(downloadInfo);
   if (normalized === "LOSSLESS") return isCDLosslessInfo(downloadInfo);
   return true;
 }
@@ -1291,6 +1292,8 @@ function buildFallbackQualities(quality, allowFallback) {
     return ["DOLBY_ATMOS", "HI_RES_LOSSLESS", "LOSSLESS"];
   }
   if (normalized === "HI_RES_LOSSLESS") {
+    // Without host fallback a 16-bit file is useless: the host deletes it.
+    if (allowFallback === false) return ["HI_RES_LOSSLESS"];
     return ["HI_RES_LOSSLESS", "LOSSLESS"];
   }
   return [normalized || "LOSSLESS"];
@@ -1480,10 +1483,10 @@ function isDeterministicDownloadError(error) {
     /^(?:Download API|mirror) returned PREVIEW asset$/.test(message);
 }
 
-function tryMirrorDownloadInfo(trackID, quality, candidate, attempt, rejectedCandidates, qualityErrors) {
+function tryMirrorDownloadInfo(trackID, quality, candidate, attempt, rejectedCandidates, qualityErrors, strict) {
   try {
     var mirrorDownloadInfo = fetchMirrorDownloadInfo(trackID, candidate, rejectedCandidates);
-    if (satisfiesQuality(mirrorDownloadInfo, candidate)) {
+    if (satisfiesQuality(mirrorDownloadInfo, candidate, strict)) {
       mirrorDownloadInfo.resolvedQuality = candidate === "HI_RES_LOSSLESS" && !isHiResInfo(mirrorDownloadInfo)
         ? "LOSSLESS" : candidate;
       mirrorDownloadInfo.requestedQuality = normalizeDownloadQuality(quality);
@@ -1500,6 +1503,7 @@ function tryMirrorDownloadInfo(trackID, quality, candidate, attempt, rejectedCan
 
 function fetchDownloadInfo(trackID, quality, rejectedCandidates, allowFallback) {
   var fallbacks = buildFallbackQualities(quality, allowFallback);
+  var strict = allowFallback === false && normalizeDownloadQuality(quality) === "HI_RES_LOSSLESS";
   var allErrors = [];
   var maxRetries = CONFIG.maxDownloadAttempts;
   var hasMirrors = !!(CONFIG.mirrorBaseURLs && CONFIG.mirrorBaseURLs.length);
@@ -1525,7 +1529,7 @@ function fetchDownloadInfo(trackID, quality, rejectedCandidates, allowFallback) 
       var deterministic = false;
       var retryAfterMs = 0;
       if (CONFIG.preferMirrors && candidate !== "DOLBY_ATMOS") {
-        var preferredDownloadInfo = tryMirrorDownloadInfo(trackID, quality, candidate, attempt, rejectedCandidates, qualityErrors);
+        var preferredDownloadInfo = tryMirrorDownloadInfo(trackID, quality, candidate, attempt, rejectedCandidates, qualityErrors, strict);
         if (preferredDownloadInfo) return preferredDownloadInfo;
       }
       if (!apiExhausted) {
@@ -1533,7 +1537,7 @@ function fetchDownloadInfo(trackID, quality, rejectedCandidates, allowFallback) 
           if (!apiTicketID) apiTicketID = signedTicket("tid", "track", trackID);
           var apiDownloadInfo = fetchAPIDownloadInfo(trackID, candidate, apiTicketID);
           apiTicketID = "";
-          if (satisfiesQuality(apiDownloadInfo, candidate)) {
+          if (satisfiesQuality(apiDownloadInfo, candidate, strict)) {
             // Max is a preference. Keep a usable CD FLAC response rather than
             // discarding it and risking another request for the same stream.
             apiDownloadInfo.resolvedQuality = candidate === "HI_RES_LOSSLESS" && !isHiResInfo(apiDownloadInfo)
@@ -1568,7 +1572,7 @@ function fetchDownloadInfo(trackID, quality, rejectedCandidates, allowFallback) 
       }
 
       if (!CONFIG.preferMirrors && candidate !== "DOLBY_ATMOS") {
-        var mirrorDownloadInfo = tryMirrorDownloadInfo(trackID, quality, candidate, attempt, rejectedCandidates, qualityErrors);
+        var mirrorDownloadInfo = tryMirrorDownloadInfo(trackID, quality, candidate, attempt, rejectedCandidates, qualityErrors, strict);
         if (mirrorDownloadInfo) return mirrorDownloadInfo;
       }
 
@@ -1897,6 +1901,43 @@ function resolveDownloadQualityForTrack(track, requestedQuality) {
 
   log.info("[TidalWeb] Track metadata reports 16-bit Lossless; using LOSSLESS instead of HI_RES_LOSSLESS");
   return "LOSSLESS";
+}
+
+// true = hi-res, false = explicitly not hi-res, null = metadata missing
+// (do not skip on unknown: the real check happens after the transfer).
+function tidalHiResState(rawTrack) {
+  if (!rawTrack) return null;
+  var tags = tidalMediaTags(rawTrack);
+  var audioQuality = String(rawTrack.audioQuality || "").toUpperCase();
+  if (audioQuality === "HI_RES" || audioQuality === "HI_RES_LOSSLESS" ||
+      tidalHasTag(tags, "HIRES_LOSSLESS") || tidalHasTag(tags, "HI_RES_LOSSLESS")) {
+    return true;
+  }
+  if (audioQuality === "LOSSLESS" || audioQuality === "HIGH" || audioQuality === "LOW" ||
+      tidalHasTag(tags, "LOSSLESS")) {
+    return false;
+  }
+  return null;
+}
+
+function tidalQualityInfo(rawTrack, formattedTrack) {
+  var state = tidalHiResState(rawTrack);
+  var declared = String(rawTrack && rawTrack.audioQuality || "").toUpperCase();
+  return {
+    max_quality: state === true ? "HI_RES_LOSSLESS" : (state === false ? (declared || "LOSSLESS") : "UNKNOWN"),
+    quality_label: formattedTrack && formattedTrack.audio_quality || "",
+    hires: state,
+    has_atmos: tidalAudioModes(rawTrack || {}) === "DOLBY_ATMOS"
+  };
+}
+
+// checkAvailability options: the host must pass quality and allowFallback
+// (or allow_fallback) for the strict check to apply.
+function availabilityStrictHiRes(options) {
+  options = options || {};
+  var fallback = options.allowFallback !== undefined ? options.allowFallback : options.allow_fallback;
+  var quality = String(options.quality || "").trim();
+  return fallback === false && !!quality && normalizeDownloadQuality(quality) === "HI_RES_LOSSLESS";
 }
 
 function tidalAudioQualityLabel(track) {
@@ -2849,9 +2890,17 @@ function checkAvailability(isrc, trackName, artistName, options) {
         var directRawTrack = fetchTrack(stripPrefix(directTrackId));
         var directTrack = hydrateRawTrack(directRawTrack);
         if (tidalTrackMatchesRequest(directTrack, isrc, trackName, artistName, expectedDurationMs)) {
+          if (availabilityStrictHiRes(options) && tidalHiResState(directRawTrack) === false) {
+            return {
+              available: false,
+              reason: "No hi-res on TIDAL",
+              quality: tidalQualityInfo(directRawTrack, directTrack)
+            };
+          }
           return {
             available: true,
             track_id: stripPrefix(directTrackId),
+            quality: tidalQualityInfo(directRawTrack, directTrack),
             prepared_context: {
               track_id: stripPrefix(directTrackId),
               raw_track: directRawTrack,
@@ -2920,9 +2969,17 @@ function checkAvailability(isrc, trackName, artistName, options) {
         reason: "Prepared TIDAL track no longer matched the request"
       };
     }
+    if (availabilityStrictHiRes(options) && tidalHiResState(preparedRawTrack) === false) {
+      return {
+        available: false,
+        reason: "No hi-res on TIDAL",
+        quality: tidalQualityInfo(preparedRawTrack, preparedFormattedTrack)
+      };
+    }
     return {
       available: true,
       track_id: bestTrackId,
+      quality: tidalQualityInfo(preparedRawTrack, preparedFormattedTrack),
       prepared_context: {
         track_id: bestTrackId,
         raw_track: preparedRawTrack,
@@ -2967,6 +3024,16 @@ function download(trackID, quality, outputPath, onProgress, options) {
           file_path: String(existing.filePath || "")
         }, formattedTrack);
       }
+    }
+
+    var strictHiRes = options.allowFallback === false &&
+      normalizeDownloadQuality(quality) === "HI_RES_LOSSLESS";
+    if (strictHiRes && tidalHiResState(rawTrack) === false) {
+      return {
+        success: false,
+        error_message: "TIDAL reports no hi-res for this track; skipped before download",
+        error_type: "quality_unavailable"
+      };
     }
 
     progressPercent(onProgress, 5);
@@ -3078,8 +3145,9 @@ function download(trackID, quality, outputPath, onProgress, options) {
       success: false,
       error_message: errorMessage,
       error_type: isVerificationRequiredError(e) ? "verification_required" :
+        (/returned lower tier than requested/.test(errorMessage) ? "quality_unavailable" :
         (e && e.code === "RESOLUTION_TIMEOUT" ? "timeout" :
-          (/download cancelled/i.test(errorMessage) ? "cancelled" : "runtime_error")),
+          (/download cancelled/i.test(errorMessage) ? "cancelled" : "runtime_error"))),
       retry_after_seconds: Math.ceil(Number(e && e.retryAfterMs || 0) / 1000)
     };
   }

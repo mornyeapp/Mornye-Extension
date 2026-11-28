@@ -2707,11 +2707,44 @@ function normalizeQualityCode(quality) {
   }
 }
 
-function qualityFallbackChain(quality) {
+function qualityFallbackChain(quality, strict) {
   var code = normalizeQualityCode(quality);
-  if (code === "27") return ["27", "7", "6"];
-  if (code === "7") return ["7", "6"];
+  // Strict hi-res: never end the chain on 16-bit CD quality.
+  if (code === "27") return strict ? ["27", "7"] : ["27", "7", "6"];
+  if (code === "7") return strict ? ["7"] : ["7", "6"];
   return ["6"];
+}
+
+// true = hi-res, false = 16-bit only, null = unknown (do not skip on unknown).
+function qobuzHiResState(raw) {
+  var depth = Number(raw && raw.maximum_bit_depth || 0);
+  if (depth > 0) return depth > 16;
+  if (raw && (raw.hires === true || raw.hires_streamable === true)) return true;
+  return null;
+}
+
+// Strict hi-res: the host forbids a lower tier (allowFallback === false) and
+// a hi-res tier was requested. A 16-bit file would only be deleted by the host.
+function isStrictHiRes(quality, options) {
+  return !!options && options.allowFallback === false && normalizeQualityCode(quality) !== "6";
+}
+
+function qobuzQualityInfo(raw) {
+  return {
+    max_bit_depth: Number(raw && raw.maximum_bit_depth || 0),
+    max_sampling_rate: Number(raw && raw.maximum_sampling_rate || 0),
+    quality_label: raw ? qobuzAudioQualityLabel(raw) : "",
+    hires: qobuzHiResState(raw)
+  };
+}
+
+// checkAvailability options: the host must pass quality and allowFallback
+// (or allow_fallback) for the strict check to apply.
+function availabilityStrictHiRes(options) {
+  options = options || {};
+  var fallback = options.allowFallback !== undefined ? options.allowFallback : options.allow_fallback;
+  var quality = String(options.quality || "").trim();
+  return fallback === false && !!quality && normalizeQualityCode(quality) !== "6";
 }
 
 function parseDownloadInfo(payload) {
@@ -2851,8 +2884,8 @@ function fetchProviderDownloadInfo(provider, trackID, qualityCode) {
   throw lastError || new Error("provider request failed");
 }
 
-function resolveDownloadInfo(trackID, requestedQuality, rejectedCandidates) {
-  var qualities = qualityFallbackChain(requestedQuality);
+function resolveDownloadInfo(trackID, requestedQuality, rejectedCandidates, strict) {
+  var qualities = qualityFallbackChain(requestedQuality, strict);
   var errors = [];
   rejectedCandidates = rejectedCandidates || {};
 
@@ -2971,9 +3004,17 @@ function checkAvailability(isrc, trackName, artistName, options) {
       try {
         var directTrack = fetchTrackRaw(directTrackId);
         if (qobuzTrackMatchesRequest(directTrack, isrc, trackName, artistName, expectedDurationMs)) {
+          if (availabilityStrictHiRes(options) && qobuzHiResState(directTrack) === false) {
+            return {
+              available: false,
+              reason: "No hi-res on Qobuz (max 16-bit)",
+              quality: qobuzQualityInfo(directTrack)
+            };
+          }
           return {
             available: true,
             track_id: String(directTrack.id || "").trim(),
+            quality: qobuzQualityInfo(directTrack),
             prepared_context: { raw_track: directTrack }
           };
         }
@@ -3003,9 +3044,17 @@ function checkAvailability(isrc, trackName, artistName, options) {
       };
     }
 
+    if (availabilityStrictHiRes(options) && qobuzHiResState(best) === false) {
+      return {
+        available: false,
+        reason: "No hi-res on Qobuz (max 16-bit)",
+        quality: qobuzQualityInfo(best)
+      };
+    }
     return {
       available: true,
       track_id: String(best.id || "").trim(),
+      quality: qobuzQualityInfo(best),
       prepared_context: { raw_track: best }
     };
   } catch (e) {
@@ -3052,6 +3101,15 @@ function download(trackID, quality, outputPath, onProgress, options) {
       }
     }
 
+    var strictHiRes = isStrictHiRes(quality, options);
+    if (strictHiRes && rawTrack && qobuzHiResState(rawTrack) === false) {
+      return {
+        success: false,
+        error_message: "Qobuz reports 16-bit only for this track; skipped before download",
+        error_type: "quality_unavailable"
+      };
+    }
+
     progressPercent(onProgress, 5);
 
     var actualOutputPath = ensureOutputExtension(outputPath, ".flac");
@@ -3062,12 +3120,12 @@ function download(trackID, quality, outputPath, onProgress, options) {
     var validation = { valid: true, preview: false, message: "" };
 
     var rejectedDownloadCandidates = {};
-    var maxDownloadAttempts = qualityFallbackChain(quality).length * Math.max(CONFIG.downloadProviders.length, 1);
+    var maxDownloadAttempts = qualityFallbackChain(quality, strictHiRes).length * Math.max(CONFIG.downloadProviders.length, 1);
     var previewMessages = [];
 
     for (var attempt = 0; attempt < maxDownloadAttempts; attempt++) {
       try {
-        downloadInfo = resolveDownloadInfo(trackID, quality, rejectedDownloadCandidates);
+        downloadInfo = resolveDownloadInfo(trackID, quality, rejectedDownloadCandidates, strictHiRes);
       } catch (resolveError) {
         if (isVerificationRequiredError(resolveError)) throw resolveError;
         if (previewMessages.length) {
@@ -3083,6 +3141,15 @@ function download(trackID, quality, outputPath, onProgress, options) {
       }
       progressPercent(onProgress, 10);
 
+      // The provider answer states the bit depth before any bytes move.
+      if (strictHiRes && Number(downloadInfo.bitDepth || 0) > 0 && Number(downloadInfo.bitDepth) <= 16) {
+        return {
+          success: false,
+          error_message: "Provider returned 16-bit audio; transfer skipped",
+          error_type: "quality_unavailable"
+        };
+      }
+
       var downloadResult = downloadDirectFile(downloadInfo.directURL, actualOutputPath, onProgress, 10, 82);
       if (!downloadResult || !downloadResult.success) {
         deleteQuietly(actualOutputPath);
@@ -3090,7 +3157,7 @@ function download(trackID, quality, outputPath, onProgress, options) {
         var cancelled = (downloadResult && downloadResult.error_type === "cancelled") ||
           /cancelled/i.test(transferError) || ensureNotCancelled();
         if (!cancelled && downloadInfo.provider === "custom" && attempt + 1 < maxDownloadAttempts) {
-          var rejectedQualities = qualityFallbackChain(quality);
+          var rejectedQualities = qualityFallbackChain(quality, strictHiRes);
           for (var q = 0; q < rejectedQualities.length; q++) {
             rejectedDownloadCandidates["custom@" + rejectedQualities[q]] = true;
           }

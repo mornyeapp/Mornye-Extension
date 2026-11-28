@@ -24,7 +24,7 @@ var CONFIG = {
 
 // Logged so an exported log names the running package. Kept equal to
 // manifest.json by tests/amazon_session.test.cjs.
-var EXTENSION_VERSION = "2.3.20";
+var EXTENSION_VERSION = "2.3.21";
 
 var USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
@@ -3472,6 +3472,27 @@ function qualityToCodec(quality) {
   return "flac";
 }
 
+// Strict hi-res: the host forbids a lower tier (allowFallback === false) and a
+// hi-res tier was requested. A CD-quality stream would be discarded by the host.
+// "best" is the only lossless id in the manifest, so CD and hi-res requests are
+// told apart by options.requestedQuality. Without it the transfer proceeds.
+function isStrictHiResRequest(quality, options) {
+  options = options || {};
+  var fallback = options.allowFallback !== undefined ? options.allowFallback : options.allow_fallback;
+  var requested = String(options.requestedQuality || "").toUpperCase();
+  return fallback === false && (requested === "HI_RES_LOSSLESS" || requested === "HI_RES") &&
+    qualityToCodec(quality) === "flac";
+}
+
+// true only on explicit evidence (bit depth known and <= 16, sample rate
+// known and <= 48 kHz). Missing data is not evidence: the transfer proceeds.
+function isCDQualityStream(info) {
+  var depth = Number(info && info.bitDepth || 0);
+  var rate = Number(info && info.sampleRate || 0);
+  if (rate > 0 && rate < 1000) rate *= 1000; // kHz -> Hz
+  return depth > 0 && depth <= 16 && rate > 0 && rate <= 48000;
+}
+
 function normalizeAudioCodec(codec) {
   var c = String(codec || "").toLowerCase().trim();
   if (c.indexOf(".") >= 0) c = c.split(".")[0];
@@ -4193,6 +4214,18 @@ registerExtension({
       }
 
       actualCodec = normalizeAudioCodec(apiResult.codec || codec);
+      // The stream's bit depth and sample rate are known before any bytes move.
+      // Return (not continue): do not retry the quota-limited default API for a
+      // track already known to be CD quality.
+      if (isStrictHiResRequest(quality, options) && actualCodec === "flac" && isCDQualityStream(apiResult)) {
+        L("info", "[Amazon] CD-quality stream in strict hi-res mode, transfer skipped:", asin,
+          apiResult.bitDepth + "bit/" + apiResult.sampleRate);
+        return {
+          success: false,
+          error_message: "Amazon returned CD-quality audio (" + apiResult.bitDepth + "-bit); transfer skipped",
+          error_type: "quality_unavailable"
+        };
+      }
       outputExt = "";
       if (actualCodec === "ac4") {
         outputExt = ".mp4";
