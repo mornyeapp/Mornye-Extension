@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-11-27T00:00:00Z",
+  "updated_at": "2026-11-28T00:00:00Z",
   "extensions": [
     {
       "id": "spotify-web",
@@ -131,10 +131,10 @@
       "id": "qobuz-web",
       "name": "qobuz-web",
       "display_name": "Qobuz",
-      "version": "1.2.27",
+      "version": "1.2.28",
       "description": "Qobuz metadata and download provider for Mornye with resilient album search and track recovery, complete release metadata, credits, multi-disc totals, and original artwork.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/qobuz-web.sflx",
-      "sha256": "c29bdf9f816e5eaab5956552f7236be9b18e89255ce2c39b7681d24f358cde97",
+      "sha256": "778236aceaa91cbec55462b7aae110c8dd922c866b94642314529a6783b4816e",
       "category": "download",
       "tags": [
         "qobuz",
@@ -144,7 +144,7 @@
         "search"
       ],
       "downloads": 0,
-      "updated_at": "2026-11-07T00:00:00Z",
+      "updated_at": "2026-11-28T00:00:00Z",
       "min_app_version": "5.3.0",
       "runtime": "javascript"
     },
@@ -152,10 +152,10 @@
       "id": "tidal-web",
       "name": "tidal-web",
       "display_name": "Tidal",
-      "version": "1.2.17",
+      "version": "1.2.18",
       "description": "TIDAL metadata, search, and download provider for Mornye with complete release, credits, explicit, and disc metadata from TIDAL Web.",
       "download_url": "https://raw.githubusercontent.com/mornyeapp/Mornye-Extension/main/extensions/tidal-web.sflx",
-      "sha256": "fcd7a0ca4dda3dacd688c6962db218f89dd165d5449c640e71a0b1bf24847cce",
+      "sha256": "54f843f81b7b4f912540975c52550c8f65d4a644154724cffef798147ca19d02",
       "category": "download",
       "tags": [
         "tidal",
@@ -165,7 +165,7 @@
         "search"
       ],
       "downloads": 0,
-      "updated_at": "2026-11-20T00:00:00Z",
+      "updated_at": "2026-11-28T00:00:00Z",
       "min_app_version": "4.9.0",
       "runtime": "javascript"
     },
