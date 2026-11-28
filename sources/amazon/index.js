@@ -3472,12 +3472,16 @@ function qualityToCodec(quality) {
   return "flac";
 }
 
-// Strict hi-res: the host forbids a lower tier (allowFallback === false) and the
-// request is for lossless FLAC. A CD-quality stream would be discarded by the host.
+// Strict hi-res: the host forbids a lower tier (allowFallback === false) and a
+// hi-res tier was requested. A CD-quality stream would be discarded by the host.
+// "best" is the only lossless id in the manifest, so CD and hi-res requests are
+// told apart by options.requestedQuality. Without it the transfer proceeds.
 function isStrictHiResRequest(quality, options) {
   options = options || {};
   var fallback = options.allowFallback !== undefined ? options.allowFallback : options.allow_fallback;
-  return fallback === false && qualityToCodec(quality) === "flac";
+  var requested = String(options.requestedQuality || "").toUpperCase();
+  return fallback === false && (requested === "HI_RES_LOSSLESS" || requested === "HI_RES") &&
+    qualityToCodec(quality) === "flac";
 }
 
 // true only on explicit evidence (bit depth known and <= 16, sample rate
